@@ -6,8 +6,8 @@
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#6e1423",
-  "theme_color": "#6e1423",
+  "background_color": "#8fcde5",
+  "theme_color": "#8fcde5",
   "icons": [
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]

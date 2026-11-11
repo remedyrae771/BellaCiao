@@ -1,8 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#6e1423"/>
-  <circle cx="256" cy="256" r="190" fill="none" stroke="#b08d57" stroke-width="6"/>
-  <text x="256" y="300" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-weight="700" font-size="150" fill="#fbf7f0">B<tspan fill="#b08d57">·</tspan>C</text>
-  <rect x="196" y="350" width="40" height="6" fill="#55613a"/>
-  <rect x="236" y="350" width="40" height="6" fill="#fbf7f0"/>
-  <rect x="276" y="350" width="40" height="6" fill="#b4532a"/>
+  <rect width="512" height="512" fill="#fffdf8"/>
+  <circle cx="256" cy="256" r="236" fill="#8fcde5"/>
+  <circle cx="256" cy="256" r="214" fill="none" stroke="#fffdf8" stroke-width="10"/>
+  <text x="256" y="292" text-anchor="middle" font-family="Pacifico, 'Brush Script MT', cursive" font-size="132" fill="#e2643b">BC</text>
+  <line x1="150" y1="350" x2="200" y2="350" stroke="#e2643b" stroke-width="5"/>
+  <line x1="312" y1="350" x2="362" y2="350" stroke="#e2643b" stroke-width="5"/>
+  <circle cx="256" cy="350" r="7" fill="#e2643b"/>
 </svg>

@@ -204,11 +204,14 @@
   };
 
   const header = (title, back) => `
-    <header class="topbar">
-      ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Назад">‹</button>` : `<div class="brand-mini">B<span>·</span>C</div>`}
-      <h1>${esc(title)}</h1>
-      <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
-    </header>`;
+    <div class="topbar-wrap">
+      <header class="topbar">
+        ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Назад">‹</button>` : `<div class="brand-mini" aria-label="Bella Ciao">BC</div>`}
+        <h1>${title === 'Bella Ciao' ? '<span class="script">Bella Ciao</span>' : esc(title)}</h1>
+        <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
+      </header>
+      <div class="ceramic-rule"></div>
+    </div>`;
 
   const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
@@ -235,9 +238,11 @@
       <main class="login">
         <div class="login-card">
           <div class="logo">
-            <div class="logo-script">Bella Ciao</div>
-            <div class="logo-sub">TRATTORIA · ALMATY</div>
-            <div class="logo-rule"><span></span>Cucina<span></span></div>
+            <div class="logo-badge">
+              <div class="logo-script">Bella Ciao</div>
+              <div class="logo-sub">Trattoria Italiana</div>
+            </div>
+            <div class="logo-tag">CUCINA · ALMATY</div>
           </div>
           <p class="login-hint">${locked ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите ваш личный код'}</p>
           <div class="pin-dots">${dots}</div>
@@ -343,7 +348,7 @@
             <button class="btn">Добавить</button>
           </form>
           <button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}">Готово</button>`
-          : `${p.pct === 100 && items.length ? '<div class="done-banner">Perfetto! Чек-лист выполнен 🇮🇹</div>' : ''}
+          : `${p.pct === 100 && items.length ? '<div class="done-banner">Perfetto! Чек-лист выполнен</div>' : ''}
              ${can.editLists() ? `<button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">✎ Редактировать пункты</button>` : ''}`}
       </main>${nav()}`;
   }
