@@ -60,6 +60,28 @@
     return 'djb2-' + h.toString(16);
   }
 
+  // Окно подтверждения внутри приложения (системный confirm() работает не везде)
+  function ask(text, okLabel = 'Да', danger = false) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'modal';
+      wrap.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true">
+        <p>${esc(text)}</p>
+        <div class="modal-btns">
+          <button class="btn btn-ghost" data-ans="0">Отмена</button>
+          <button class="btn ${danger ? 'btn-danger' : ''}" data-ans="1">${esc(okLabel)}</button>
+        </div></div>`;
+      const done = (v) => { wrap.remove(); resolve(v); };
+      wrap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const b = e.target.closest('[data-ans]');
+        if (b) done(b.dataset.ans === '1'); else if (e.target === wrap) done(false);
+      });
+      document.body.appendChild(wrap);
+      wrap.querySelector('[data-ans="1"]').focus();
+    });
+  }
+
   function toast(msg) {
     const el = $('#toast');
     el.textContent = msg;
@@ -990,13 +1012,13 @@
     if (el.hasAttribute('data-cancel-pick')) { state.group = null; render(); return; }
     if (d.clock) {
       if (d.clock === 'in') clockIn();
-      else if (confirm('Закончить смену сейчас?')) clockOut();
+      else if (await ask('Закончить смену сейчас?', 'Закончить')) clockOut();
       else return;
       if (navigator.vibrate) navigator.vibrate(30);
       render(); return;
     }
     if (d.delShift) {
-      if (!confirm('Удалить эту смену?')) return;
+      if (!(await ask('Удалить эту смену?', 'Удалить', true))) return;
       save(KEY.shifts, allShifts().filter((x) => x.id !== d.delShift));
       toast('Смена удалена'); go('team', { tab: 'hours' }); return;
     }
@@ -1022,7 +1044,7 @@
       const lists = load(KEY.lists, {});
       const arr = lists[d.station][d.type];
       const it = arr.find((i) => i.id === d.delItem);
-      if (!it || !confirm(`Удалить пункт «${it.text}»?`)) return;
+      if (!it || !(await ask(`Удалить пункт «${it.text}»?`, 'Удалить', true))) return;
       lists[d.station][d.type] = arr.filter((i) => i.id !== d.delItem);
       save(KEY.lists, lists); render(); return;
     }
@@ -1035,12 +1057,12 @@
       save(KEY.lists, lists); render(); return;
     }
     if (d.delTtk) {
-      if (!confirm('Удалить эту ТТК?')) return;
+      if (!(await ask('Удалить эту ТТК?', 'Удалить', true))) return;
       save(KEY.ttk, load(KEY.ttk, []).filter((t) => t.id !== d.delTtk));
       toast('ТТК удалена'); go('ttk'); return;
     }
     if (d.delMember) {
-      if (!confirm('Удалить сотрудника?')) return;
+      if (!(await ask('Удалить сотрудника?', 'Удалить', true))) return;
       save(KEY.staff, load(KEY.staff, []).filter((u) => u.id !== d.delMember));
       toast('Сотрудник удалён'); go('team', { tab: 'staff' }); return;
     }

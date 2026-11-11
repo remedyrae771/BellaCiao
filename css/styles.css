@@ -102,7 +102,7 @@ body.is-login {
 .on-shift { color: var(--green); font-weight: 700; }
 
 /* ---------------- Шапка ---------------- */
-.topbar-wrap { position: sticky; top: 0; z-index: 20; background: var(--navy); }
+.topbar-wrap { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--navy); }
 .topbar {
   display: flex; align-items: center; gap: 12px; color: #fff;
   padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); min-height: 60px;
@@ -414,3 +414,12 @@ h2.section-title + .ts-table { border: 1px solid var(--line); border-radius: var
 .storage-table td { text-align: left !important; white-space: normal !important; }
 .storage-table th { text-align: left !important; }
 .ttk-detail .alert { cursor: default; }
+
+/* Окно подтверждения */
+.modal { position: fixed; inset: 0; z-index: 200; background: rgba(20, 28, 43, .45); display: grid; place-items: center; padding: 16px; }
+.modal-box { background: var(--surface); border-radius: var(--radius-lg); padding: 20px; width: 100%; max-width: 360px; box-shadow: var(--shadow-2); }
+.modal-box p { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.modal-btns { display: flex; gap: 8px; }
+.modal-btns .btn { flex: 1; }
+.btn-danger { background: var(--danger); }
+.btn-danger:hover { background: #8f1e18; }
