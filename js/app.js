@@ -92,6 +92,12 @@
     if (!load(KEY.ttk)) save(KEY.ttk, DEFAULT_TTK);
     // Удаляем примерные ТТК — ресторан загружает свои карты
     if ((load('bc_seed', 0) || 0) < 3) { save(KEY.ttk, []); save('bc_seed', 3); }
+    // Загружаем ТТК ресторана (карты с кухни); вручную добавленные карты сохраняются
+    if ((load('bc_seed', 0) || 0) < 4) {
+      const mine = load(KEY.ttk, []).filter((t) => !DEFAULT_TTK.some((d) => d.id === t.id));
+      save(KEY.ttk, [...DEFAULT_TTK, ...mine]);
+      save('bc_seed', 4);
+    }
     if (!load(KEY.safety)) save(KEY.safety, DEFAULT_SAFETY);
     if (!load(KEY.lists)) {
       const lists = {};
@@ -526,13 +532,29 @@
       </main>${nav()}`;
   }
 
+  /* ---------- ТТК: форматирование ---------- */
+  // Ингредиент: [название, количество, единица]. Старый формат [название, брутто, нетто] → граммы.
+  const ingUnit = (i) => (typeof i[2] === 'string' ? i[2] : 'г');
+  function fmtQty(q, unit) {
+    const n = Number(q) || 0;
+    const digits = unit === 'кг' || unit === 'л' ? 3 : 1;
+    return n.toLocaleString('ru-RU', { minimumFractionDigits: unit === 'кг' || unit === 'л' ? 3 : 0, maximumFractionDigits: digits });
+  }
+  const ttkStationLabel = (t) => (t.station ? stationById(t.station).short : 'Все станции');
+
   function viewTtk() {
     const all = load(KEY.ttk, []);
     const q = (state.params.q || '').toLowerCase();
-    const st = state.params.station ?? (can.allStations() ? '' : state.user.station);
+    const cat = state.params.cat || '';
+    const st = state.params.station || '';
+    const cats = TTK_CATEGORIES.filter((c) => all.some((t) => t.category === c));
+    if (all.some((t) => !TTK_CATEGORIES.includes(t.category))) cats.push('Другое');
+    const catOf = (t) => (TTK_CATEGORIES.includes(t.category) ? t.category : 'Другое');
     const list = all
-      .filter((t) => !st || t.station === st)
-      .filter((t) => !q || t.name.toLowerCase().includes(q) || t.ingredients.some((i) => i[0].toLowerCase().includes(q)));
+      .filter((t) => !cat || catOf(t) === cat)
+      .filter((t) => !st || t.station === st || !t.station)
+      .filter((t) => !q || t.name.toLowerCase().includes(q) || t.ingredients.some((i) => String(i[0]).toLowerCase().includes(q)));
+    const groups = (cat ? [cat] : cats).map((c) => [c, list.filter((t) => catOf(t) === c)]).filter(([, l]) => l.length);
 
     return `${header('ТТК')}
       <main class="page">
@@ -540,23 +562,43 @@
           <input type="search" id="ttk-search" placeholder="Поиск блюда или ингредиента…" value="${esc(state.params.q || '')}"/>
         </div>
         <div class="chips">
-          <button class="chip ${!st ? 'on' : ''}" data-go="ttk" data-station="">Все</button>
-          ${STATIONS.map((s) => `<button class="chip ${s.id === st ? 'on' : ''}" data-go="ttk" data-station="${s.id}">${ic(s.icon, 16)} ${esc(s.short)}</button>`).join('')}
+          <button class="chip ${!cat ? 'on' : ''}" data-go="ttk" data-cat="" data-station="${st}">Все · ${all.length}</button>
+          ${cats.map((c) => `<button class="chip ${c === cat ? 'on' : ''}" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">${esc(c)}</button>`).join('')}
         </div>
-        <div class="ttk-list">
-          ${list.map((t) => `
-            <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-              <span class="ttk-st">${ic(stationById(t.station).icon, 22)}</span>
-              <span class="ttk-body">
-                <b>${esc(t.name)}</b>
-                <small>${esc(stationById(t.station).short)} · выход ${t.yield ? t.yield + ' г' : '—'} · ${esc(t.time)}</small>
-              </span>
-              <span class="chev">${ic('chevR', 18)}</span>
-            </button>`).join('') || (all.length ? '<p class="empty">Ничего не найдено</p>'
-              : `<div class="card empty-list">${ic('book', 32)}<b>Технологических карт пока нет</b>
-                  <p class="muted">${can.editTtk() ? 'Добавьте первую карту кнопкой «+».' : 'Карты добавляет шеф-повар или су-шеф.'}</p></div>`)}
+        <div class="chips chips-sm">
+          <button class="chip ${!st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="">Все станции</button>
+          ${STATIONS.map((s) => `<button class="chip ${s.id === st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="${s.id}">${ic(s.icon, 14)} ${esc(s.short)}</button>`).join('')}
         </div>
+        <button class="card storage-link" data-go="ttk-storage">${ic('clock', 20)}<span><b>Сроки хранения ПФ</b><small>Срок, температура и тара</small></span>${ic('chevR', 18)}</button>
+        ${groups.map(([c, l]) => `
+          <h2 class="section-title">${esc(c)} · ${l.length}</h2>
+          <div class="ttk-list">
+            ${l.map((t) => `
+              <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
+                <span class="ttk-st">${ic(t.station ? stationById(t.station).icon : (t.kind === 'dish' ? 'sun' : 'book'), 22)}</span>
+                <span class="ttk-body">
+                  <b>${esc(t.name)}</b>
+                  <small>${t.kind === 'dish' ? 'Блюдо' : 'ПФ'} · ${esc(ttkStationLabel(t))} · выход ${esc(t.yield || '—')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
+                </span>
+                <span class="chev">${ic('chevR', 18)}</span>
+              </button>`).join('')}
+          </div>`).join('') || (all.length ? '<p class="empty">Ничего не найдено</p>'
+            : `<div class="card empty-list">${ic('book', 32)}<b>Технологических карт пока нет</b>
+                <p class="muted">${can.editTtk() ? 'Добавьте первую карту кнопкой «+».' : 'Карты добавляет шеф-повар или су-шеф.'}</p></div>`)}
         ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">${ic('plus', 26)}</button>` : ''}
+      </main>${nav()}`;
+  }
+
+  function viewTtkStorage() {
+    return `${header('Сроки хранения', 'ttk')}
+      <main class="page">
+        <p class="lead">Таблица сроков хранения полуфабрикатов (лист с холодного цеха).</p>
+        <div class="table-wrap">
+          <table class="ing storage-table">
+            <thead><tr><th>Полуфабрикат</th><th>Срок</th><th>Температура</th><th>Тара</th></tr></thead>
+            <tbody>${STORAGE_TABLE.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>
+        </div>
       </main>${nav()}`;
   }
 
@@ -564,41 +606,39 @@
     const t = load(KEY.ttk, []).find((x) => x.id === state.params.id);
     if (!t) return viewTtk();
     const k = Number(state.params.k || 1);
-    const sumB = t.ingredients.reduce((a, i) => a + Number(i[1] || 0), 0);
-    const sumN = t.ingredients.reduce((a, i) => a + Number(i[2] || 0), 0);
+    const isDish = t.kind === 'dish';
+    const tech = (t.tech || []).filter(Boolean);
+    const info = [['Подача', t.serve], ['Хранение', t.storage], ['Аллергены', t.allergens]].filter(([, v]) => v && v !== '—');
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
-        <div class="eyebrow">${esc(stationById(t.station).name)}</div>
+        <div class="eyebrow">${esc(t.category || '')} · ${esc(ttkStationLabel(t))}</div>
         <h2 class="dish">${esc(t.name)}</h2>
         <div class="meta-row">
-          <span>Выход: <b>${t.yield ? fmtNum(t.yield * k) + ' г' : '—'}</b></span>
-          <span>Время: <b>${esc(t.time)}</b></span>
+          <span>Выход: <b>${esc(t.yield || '—')}</b>${k > 1 ? ` × ${k}` : ''}</span>
+          ${t.time ? `<span>Время: <b>${esc(t.time)}</b></span>` : ''}
         </div>
+        ${t.note ? `<div class="alert">${ic('alert', 18)}<span>${esc(t.note)}</span></div>` : ''}
 
         <div class="scaler">
-          <span>Порций:</span>
-          <button class="icon-btn" data-scale="-1">${ic('minus', 18)}</button>
+          <span>${isDish ? 'Порций' : 'Замесов'}:</span>
+          <button class="icon-btn" data-scale="-1" aria-label="Меньше">${ic('minus', 18)}</button>
           <b>${k}</b>
-          <button class="icon-btn" data-scale="1">${ic('plus', 18)}</button>
-          ${[5, 10, 20].map((n) => `<button class="chip ${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}
+          <button class="icon-btn" data-scale="1" aria-label="Больше">${ic('plus', 18)}</button>
+          ${[2, 5, 10].map((n) => `<button class="chip ${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}
         </div>
 
-        <h3>Ингредиенты <small class="muted">· граммы</small></h3>
+        <h3>Ингредиенты ${k > 1 ? `<small class="muted">· пересчитано на ×${k}</small>` : ''}</h3>
         <table class="ing">
-          <thead><tr><th>Продукт</th><th>Брутто</th><th>Нетто</th></tr></thead>
-          <tbody>${t.ingredients.map((i) => `<tr><td>${esc(i[0])}</td><td>${fmtNum(i[1] * k)}</td><td>${fmtNum(i[2] * k)}</td></tr>`).join('')}</tbody>
-          <tfoot><tr><td>Итого</td><td>${fmtNum(sumB * k)}</td><td>${fmtNum(sumN * k)}</td></tr></tfoot>
+          <thead><tr><th>Продукт</th><th>Кол-во</th><th>Ед.</th></tr></thead>
+          <tbody>${t.ingredients.map((i) => `<tr><td>${esc(i[0])}</td><td>${fmtQty(i[1] * k, ingUnit(i))}</td><td class="unit">${esc(ingUnit(i))}</td></tr>`).join('')}</tbody>
         </table>
 
         <h3>Технология приготовления</h3>
-        <ol class="steps">${t.tech.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+        ${tech.length ? `<ol class="steps">${tech.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : '<p class="muted">На карте не заполнена.</p>'}
 
-        <div class="info-grid">
-          <div class="info"><h4>Подача</h4><p>${esc(t.serve)}</p></div>
-          <div class="info"><h4>Хранение</h4><p>${esc(t.storage)}</p></div>
-          <div class="info warn"><h4>Аллергены</h4><p>${esc(t.allergens)}</p></div>
-        </div>
+        ${info.length ? `<div class="info-grid">${info.map(([h, v]) =>
+          `<div class="info ${h === 'Аллергены' ? 'warn' : ''}"><h4>${h}</h4><p>${esc(v)}</p></div>`).join('')}</div>` : ''}
 
         ${can.editTtk() ? `<div class="row-btns">
           <button class="btn" data-go="ttk-edit" data-id="${t.id}">${ic('edit', 16)} Редактировать</button>
@@ -609,28 +649,39 @@
 
   function viewTtkEdit() {
     const t = load(KEY.ttk, []).find((x) => x.id === state.params.id) || {
-      id: '', station: state.user.station, name: '', yield: '', time: '', ingredients: [['', '', '']],
-      tech: [''], serve: '', storage: '', allergens: '',
+      id: '', kind: 'pf', category: TTK_CATEGORIES[1], station: '', name: '', yield: '', ingredients: [],
+      tech: [], serve: '', storage: '', allergens: '', note: '',
     };
-    const ingText = t.ingredients.map((i) => i.join(' ; ')).join('\n');
+    const ingText = t.ingredients.map((i) => [i[0], String(i[1]).replace('.', ','), ingUnit(i)].join(' ; ')).join('\n');
+    const cats = TTK_CATEGORIES.includes(t.category) || !t.category ? TTK_CATEGORIES : [...TTK_CATEGORIES, t.category];
     return `${header(t.id ? 'Редактирование ТТК' : 'Новая ТТК', t.id ? 'ttk-view' : 'ttk')}
       <main class="page">
         <form class="form" data-form="ttk" data-id="${t.id}">
-          <label>Название блюда<input name="name" required value="${esc(t.name)}"/></label>
+          <label>Название<input name="name" required value="${esc(t.name)}" placeholder="ПФ Соус песто"/></label>
           <div class="form-row">
-            <label>Станция
-              <select name="station">${STATIONS.map((s) => `<option value="${s.id}" ${s.id === t.station ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
+            <label>Тип
+              <select name="kind">
+                <option value="pf" ${t.kind !== 'dish' ? 'selected' : ''}>Полуфабрикат (на замес)</option>
+                <option value="dish" ${t.kind === 'dish' ? 'selected' : ''}>Блюдо (на порцию)</option>
+              </select>
             </label>
-            <label>Выход, г<input name="yield" type="number" min="0" step="1" value="${esc(t.yield)}"/></label>
-            <label>Время<input name="time" value="${esc(t.time)}" placeholder="10 мин"/></label>
+            <label>Категория
+              <select name="category">${cats.map((c) => `<option ${c === t.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+            </label>
+            <label>Станция
+              <select name="station"><option value="">Все станции</option>${STATIONS.map((s) => `<option value="${s.id}" ${s.id === t.station ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
+            </label>
+            <label>Выход<input name="yield" value="${esc(t.yield)}" placeholder="0,340 кг"/></label>
           </div>
-          <label>Ингредиенты <small>— по строке: Продукт ; брутто ; нетто (на 1 порцию)</small>
-            <textarea name="ingredients" rows="7" placeholder="Спагетти ; 110 ; 110">${esc(ingText)}</textarea></label>
+          <label>Ингредиенты <small>— по строке: Продукт ; количество ; единица (кг, л, г, шт)</small>
+            <textarea name="ingredients" rows="10" placeholder="Орех кедровый ; 0,060 ; кг">${esc(ingText)}</textarea></label>
           <label>Технология <small>— каждый шаг с новой строки</small>
-            <textarea name="tech" rows="6">${esc(t.tech.join('\n'))}</textarea></label>
-          <label>Подача<textarea name="serve" rows="2">${esc(t.serve)}</textarea></label>
-          <label>Хранение<textarea name="storage" rows="2">${esc(t.storage)}</textarea></label>
-          <label>Аллергены<input name="allergens" value="${esc(t.allergens)}"/></label>
+            <textarea name="tech" rows="7">${esc((t.tech || []).join('\n'))}</textarea></label>
+          <label>Хранение<textarea name="storage" rows="2" placeholder="+2…+4 °C, не более 72 часов">${esc(t.storage || '')}</textarea></label>
+          <label>Подача<textarea name="serve" rows="2">${esc(t.serve || '')}</textarea></label>
+          <label>Аллергены<input name="allergens" value="${esc(t.allergens && t.allergens !== '—' ? t.allergens : '')}"/></label>
+          <label>Пометка «сверить» <small>— оставьте пустым, если карта проверена</small>
+            <textarea name="note" rows="2">${esc(t.note || '')}</textarea></label>
           <button class="btn wide">Сохранить</button>
         </form>
       </main>${nav()}`;
@@ -903,7 +954,7 @@
   const VIEWS = {
     home: viewHome, checklists: viewChecklists, ttk: viewTtk, 'ttk-view': viewTtkDetail,
     'ttk-edit': viewTtkEdit, safety: viewSafety, team: viewTeam, member: viewMember, profile: viewProfile,
-    'shift-edit': viewShiftEdit,
+    'shift-edit': viewShiftEdit, 'ttk-storage': viewTtkStorage,
   };
 
   function render() {
@@ -997,14 +1048,15 @@
 
     if (d.go) {
       const p = {};
-      for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit', 'from', 'to']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit', 'from', 'to', 'cat']) if (d[k] !== undefined) p[k] = d[k];
       if (d.go === 'ttk-view' && !p.id) p.id = state.params.id;
       if (d.go === 'checklists') {
         if (!p.station) p.station = state.params.station;
         if (!p.type && p.station === state.params.station) p.type = state.params.type;
       }
       if (d.go === 'team' && p.tab === 'hours' && !p.from && state.params.from) { p.from = state.params.from; p.to = state.params.to; }
-      if (d.go === 'ttk' && p.station === undefined && state.view === 'ttk') p.station = state.params.station;
+      if (d.go === 'ttk' && state.view !== 'ttk' && p.station === undefined) { p.station = state.lastTtk?.station; p.cat = state.lastTtk?.cat; }
+      if (d.go === 'ttk') state.lastTtk = { station: p.station, cat: p.cat };
       go(d.go, p);
     }
   });
@@ -1052,15 +1104,18 @@
 
     if (type === 'ttk') {
       const all = load(KEY.ttk, []);
+      const num = (v) => Number(String(v ?? '').replace(/\s/g, '').replace(',', '.')) || 0;
       const ingredients = fd.ingredients.split('\n').map((l) => l.split(';').map((x) => x.trim()))
-        .filter((r) => r[0]).map((r) => [r[0], Number(String(r[1] || 0).replace(',', '.')) || 0,
-          Number(String(r[2] ?? r[1] ?? 0).replace(',', '.')) || 0]);
+        .filter((r) => r[0]).map((r) => [r[0], num(r[1]), r[2] || 'г']);
+      const old = all.find((t) => t.id === f.dataset.id) || {};
       const rec = {
-        id: f.dataset.id || 't' + uid(), name: fd.name.trim(), station: fd.station,
-        yield: Number(fd.yield) || 0, time: fd.time.trim() || '—', ingredients,
+        ...old,
+        id: f.dataset.id || 't' + uid(), name: fd.name.trim(), kind: fd.kind, category: fd.category, station: fd.station,
+        yield: fd.yield.trim(), ingredients,
         tech: fd.tech.split('\n').map((x) => x.trim()).filter(Boolean),
-        serve: fd.serve.trim() || '—', storage: fd.storage.trim() || '—', allergens: fd.allergens.trim() || '—',
+        serve: fd.serve.trim(), storage: fd.storage.trim(), allergens: fd.allergens.trim(), note: fd.note.trim(),
       };
+      delete rec.time;
       const i = all.findIndex((t) => t.id === rec.id);
       if (i >= 0) all[i] = rec; else all.push(rec);
       save(KEY.ttk, all); toast('ТТК сохранена'); go('ttk-view', { id: rec.id });

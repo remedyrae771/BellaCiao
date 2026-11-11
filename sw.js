@@ -1,6 +1,6 @@
 /* Service worker: приложение работает офлайн после первого открытия */
-const CACHE = 'bellaciao-v7';
-const ASSETS = ['./', './index.html', './css/styles.css', './js/data.js', './js/app.js', './manifest.json', './icons/icon.svg'];
+const CACHE = 'bellaciao-v8';
+const ASSETS = ['./', './index.html', './css/styles.css', './js/data.js', './js/ttk-data.js', './js/app.js', './manifest.json', './icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

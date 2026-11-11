@@ -400,3 +400,17 @@ h2.section-title + .ts-table { border: 1px solid var(--line); border-radius: var
 .checklist .move { display: flex; gap: 2px; }
 .checklist li .icon-btn { margin-right: 0; }
 .icon-btn:disabled { opacity: .3; cursor: default; }
+
+/* ТТК: категории, сроки хранения */
+.chips-sm .chip { padding: 5px 10px; font-size: 12px; }
+.storage-link { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 4px 0 4px; color: var(--navy); }
+.storage-link span { flex: 1; display: flex; flex-direction: column; }
+.storage-link b { color: var(--ink); font-size: 15px; }
+.storage-link small { color: var(--ink-2); font-size: 12px; }
+.ing td.unit { color: var(--ink-2); text-align: left; width: 1%; }
+.ing th:last-child { text-align: left; }
+.table-wrap { overflow-x: auto; border-radius: var(--radius-lg); }
+.storage-table { min-width: 620px; font-size: 13px; }
+.storage-table td { text-align: left !important; white-space: normal !important; }
+.storage-table th { text-align: left !important; }
+.ttk-detail .alert { cursor: default; }
