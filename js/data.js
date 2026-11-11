@@ -31,8 +31,9 @@ const DEFAULT_CODES = {
 
 /* Сотрудники по умолчанию (демо). rate — ставка, ₸ в час */
 const DEFAULT_STAFF = [
-  { id: 'u1', name: 'Шеф-повар',      role: 'chef', station: 'pass',   rate: 0 },
-  { id: 'u2', name: 'Су-шеф (демо)',  role: 'sous', station: 'pass',   rate: 2500 },
+  { id: 'u1', name: 'Салим лучший',        role: 'chef', station: 'pass', rate: 0 },
+  { id: 'u2', name: 'Маманбий Сметуллаев', role: 'sous', station: 'pass', rate: 0 },
+  { id: 'u8', name: 'Илья',                role: 'sous', station: 'pass', rate: 0 },
   { id: 'u3', name: 'Повар холодного цеха (демо)', role: 'cook', station: 'cold', rate: 1500 },
   { id: 'u4', name: 'Повар пасты (демо)',  role: 'cook', station: 'pasta',  rate: 1500 },
   { id: 'u5', name: 'Повар гриля (демо)',  role: 'cook', station: 'grill',  rate: 1500 },

@@ -71,6 +71,17 @@
   /* ---------------- Первичная инициализация ---------------- */
   async function init() {
     if (!load(KEY.staff)) save(KEY.staff, DEFAULT_STAFF);
+    // Обновление уже установленного приложения: настоящие шеф и су-шефы вместо демо
+    if ((load('bc_seed', 0) || 0) < 2) {
+      const staff = load(KEY.staff, []);
+      for (const d of DEFAULT_STAFF.filter((x) => ['u1', 'u2', 'u8'].includes(x.id))) {
+        const u = staff.find((x) => x.id === d.id);
+        if (!u) staff.push({ ...d });
+        else if (['Шеф-повар', 'Су-шеф (демо)'].includes(u.name)) Object.assign(u, { name: d.name, role: d.role });
+      }
+      save(KEY.staff, staff);
+      save('bc_seed', 2);
+    }
     if (!load(KEY.codes)) {
       const codes = {};
       for (const [g, code] of Object.entries(DEFAULT_CODES)) codes[g] = { hash: await hashPin(code), isDefault: true };
