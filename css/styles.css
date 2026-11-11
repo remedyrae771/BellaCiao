@@ -11,8 +11,8 @@
   --line: #e2e0da;
   --line-2: #eceae5;
   --ink: #141c2b;
-  --ink-2: #5b6372;
-  --ink-3: #8a909b;
+  --ink-2: #4a5263;
+  --ink-3: #6b7280;
   --navy: #13284a;
   --navy-2: #1d3a68;
   --cobalt: #1f4e9c;
@@ -29,7 +29,7 @@
   --shadow-2: 0 4px 16px rgba(20, 28, 43, .08);
   --brand: 'Pacifico', 'Brush Script MT', cursive;
   --sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --nav-h: 64px;
+  --nav-h: 68px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -39,7 +39,7 @@ body {
   color: var(--ink);
   background: var(--bg);
   min-height: 100vh;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -432,3 +432,122 @@ h2.section-title + .ts-table { border: 1px solid var(--line); border-radius: var
 .copy-row label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .copy-in { display: flex; gap: 8px; flex-wrap: wrap; }
 .copy-in select { flex: 1 1 200px; min-width: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
+
+
+/* ============================================================
+   Читаемость и цвет (v2): крупнее текст, контрастнее подписи,
+   свой мягкий цвет у каждой станции и категории ТТК
+   ============================================================ */
+:root {
+  --tone-sky-bg: #e2f1f9;    --tone-sky-fg: #17638c;
+  --tone-amber-bg: #fcefd8;  --tone-amber-fg: #8a5a0b;
+  --tone-coral-bg: #fce6de;  --tone-coral-fg: #a63d1b;
+  --tone-navy-bg: #e7ecf5;   --tone-navy-fg: #13284a;
+  --tone-rose-bg: #fbe4e6;   --tone-rose-fg: #9e2f3c;
+  --tone-plum-bg: #f4e6f2;   --tone-plum-fg: #7e3670;
+  --tone-violet-bg: #ebe8f8; --tone-violet-fg: #4a3c91;
+  --tone-teal-bg: #dff2ef;   --tone-teal-fg: #17675d;
+  --tone-green-bg: #e5f2e3;  --tone-green-fg: #2f6b2a;
+}
+.tone-sky { --t-bg: var(--tone-sky-bg); --t-fg: var(--tone-sky-fg); }
+.tone-amber { --t-bg: var(--tone-amber-bg); --t-fg: var(--tone-amber-fg); }
+.tone-coral { --t-bg: var(--tone-coral-bg); --t-fg: var(--tone-coral-fg); }
+.tone-navy { --t-bg: var(--tone-navy-bg); --t-fg: var(--tone-navy-fg); }
+.tone-rose { --t-bg: var(--tone-rose-bg); --t-fg: var(--tone-rose-fg); }
+.tone-plum { --t-bg: var(--tone-plum-bg); --t-fg: var(--tone-plum-fg); }
+.tone-violet { --t-bg: var(--tone-violet-bg); --t-fg: var(--tone-violet-fg); }
+.tone-teal { --t-bg: var(--tone-teal-bg); --t-fg: var(--tone-teal-fg); }
+.tone-green { --t-bg: var(--tone-green-bg); --t-fg: var(--tone-green-fg); }
+.st-icon, .ttk-st, .mini-tile, .avatar.lg { background: var(--t-bg, var(--cobalt-l)); color: var(--t-fg, var(--navy)); }
+.st-icon, .ttk-st { width: 48px; height: 48px; border-radius: 12px; }
+.mini-tile { width: 30px; height: 30px; border-radius: 8px; display: inline-grid; place-items: center; }
+.avatar.lg { font-weight: 800; }
+
+/* Текст */
+.section-title { font-size: 18px; font-weight: 800; color: var(--ink); text-transform: none; letter-spacing: -.01em; margin: 28px 0 12px; }
+.eyebrow { font-size: 12px; color: var(--ink-2); letter-spacing: .08em; }
+.muted { font-size: 14px; }
+.lead { font-size: 16px; }
+.st-body b, .ttk-body b, .acc-t b, .pick-body b, .m-body b { font-size: 16px; }
+.st-body small, .ttk-body small, .acc-t small, .pick-body small, .m-body small, .quick-card small, .storage-link small { font-size: 14px; color: var(--ink-2); }
+.hero-greet { font-size: 15px; }
+.hero-name { font-size: 26px; }
+.hero-meta { font-size: 14px; }
+.check-row { padding: 15px 16px; font-size: 16px; }
+.check-row small { font-size: 13px; color: var(--ink-2); }
+.check-row .box { width: 24px; height: 24px; border-width: 2px; border-color: #a9aeb8; }
+.checklist li.done .txt { color: var(--ink-2); }
+.chip { font-size: 14px; padding: 8px 13px; }
+.chips-sm .chip { font-size: 13px; padding: 6px 11px; }
+.segmented button { font-size: 14px; padding: 10px 6px; }
+.segmented button small { font-size: 12px; color: var(--ink-2); }
+.ing { font-size: 15px; }
+.ing thead th { font-size: 12px; }
+.steps li { font-size: 15px; line-height: 1.55; }
+.rules li { font-size: 15px; line-height: 1.55; }
+.info h4 { font-size: 12px; }
+.pill { font-size: 12px; padding: 4px 9px; }
+.alert { font-size: 15px; }
+.form label { font-size: 14px; }
+.rc-line { font-size: 14px; }
+.toast { font-size: 15px; }
+
+/* Нижнее меню: крупнее подписи, активный пункт с подложкой */
+
+.bottom-nav button { font-size: 12px; color: var(--ink-2); gap: 4px; }
+.bottom-nav button .ic { width: 24px; height: 24px; }
+.bottom-nav .ni { display: grid; place-items: center; width: 56px; height: 30px; border-radius: 999px; transition: background .15s; }
+.bottom-nav button.active { color: var(--navy); font-weight: 800; }
+.bottom-nav button.active::before { display: none; }
+.bottom-nav button.active .ni { background: var(--cobalt-l); }
+
+/* ---------- Вход ---------- */
+body.is-login {
+  background-color: var(--navy);
+  background-image:
+    radial-gradient(120% 60% at 50% 0%, rgba(143, 205, 229, .18), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 44px);
+}
+.login { padding-block: 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.login-card { max-width: 380px; padding: 28px 24px 18px; border-radius: 22px; border-top: 0; box-shadow: 0 30px 80px rgba(0, 0, 0, .35); }
+.logo-badge { width: 104px; height: 104px; }
+.logo-script { font-size: 21px; }
+.logo-sub { font-size: 5.6px; }
+.logo-tag { margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+.login-title { font-size: 22px; font-weight: 800; margin: 18px 0 4px; color: var(--ink); }
+.login-hint { margin: 0 0 18px; font-size: 16px; font-weight: 500; color: var(--ink-2); min-height: 1.5em; }
+.login-hint.is-warn { color: #8a2f13; }
+.pin-dots { gap: 18px; margin-bottom: 22px; }
+.pin-dots i { width: 14px; height: 14px; border: 2px solid var(--navy); }
+.keypad { gap: 12px; max-width: 300px; }
+.key { height: 64px; border-radius: 16px; font-size: 26px; font-weight: 700; color: var(--navy); background: #f3f2ee; border: 1px solid #e6e3dc; }
+.key:hover { background: #ecebe6; }
+.key:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+.key:active { background: var(--navy); color: #fff; border-color: var(--navy); }
+.key-del { background: transparent; border-color: transparent; color: var(--ink-2); }
+.key-del:hover { background: #f3f2ee; }
+.login-foot { margin: 18px 0 0; display: flex; justify-content: center; }
+.net { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #f3f2ee; color: var(--ink-2); }
+.net i { width: 8px; height: 8px; border-radius: 50%; background: #a9aeb8; }
+.net-online { background: var(--green-l); color: var(--green); }
+.net-online i { background: var(--green); }
+.net-loading i { background: #d39b2a; animation: pulse 1.2s ease-in-out infinite; }
+.net-offline { background: var(--coral-l); color: #8a2f13; }
+.net-offline i { background: var(--coral); }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .net-loading i { animation: none; } }
+.login-card.pick { padding: 24px 20px 20px; }
+.pick-head h2 { font-size: 24px; }
+.pick-row { padding: 12px 14px; min-height: 68px; border-radius: 14px; }
+.pick-row .avatar.lg { width: 46px; height: 46px; font-size: 15px; }
+
+.logo-badge { width: 112px; height: 112px; }
+.logo-sub { white-space: nowrap; font-size: 6px; }
+.shift-timer.is-off { font-size: 20px; color: var(--ink-2); }
+.quick { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.quick-card { flex-direction: row; align-items: center; gap: 14px; padding: 12px 14px; }
+.quick-card .q-ic { margin: 0; width: 44px; height: 44px; border-radius: 12px; background: var(--t-bg, var(--cobalt-l)); color: var(--t-fg, var(--navy)); flex: none; }
+.quick-card .q-t { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.quick-card > .ic { color: var(--ink-3); }
+.storage-link > .ic:first-child { color: var(--tone-sky-fg); }
