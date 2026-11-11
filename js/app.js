@@ -1,7 +1,8 @@
 /* ============================================================
    Bella Ciao — Kitchen App
-   Одностраничное приложение без сервера: данные хранятся
-   в localStorage устройства (планшет на кухне).
+   Одностраничное приложение. В опубликованной версии данные кухни
+   хранятся в общей базе (js/sync.js) и видны на всех устройствах;
+   без неё — в localStorage этого устройства.
    ============================================================ */
 (() => {
   'use strict';
@@ -19,10 +20,12 @@
     session: 'bc_session_v1',
   };
   const load = (k, fallback) => {
+    if (Sync.handles(k)) { const v = Sync.get(k); return v === undefined ? fallback : v; }
     try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }
     catch { return fallback; }
   };
   const save = (k, v) => {
+    if (Sync.handles(k)) { Sync.set(k, v); return; }
     try { localStorage.setItem(k, JSON.stringify(v)); }
     catch { toast('Не удалось сохранить данные на устройстве'); }
   };
@@ -92,6 +95,47 @@
 
   /* ---------------- Первичная инициализация ---------------- */
   async function init() {
+    // Общая база доступна только внутри опубликованной страницы claude.ai
+    if (window.claude?.use) Sync.connecting();
+    const db = window.claude?.use ? await window.claude.use('db').catch(() => null) : null;
+    if (!db) Sync.noDatabase();
+    if (db) {
+      const codes = {};
+      for (const [g, code] of Object.entries(DEFAULT_CODES)) codes[g] = { hash: await hashPin(code), isDefault: true };
+      const lists = {};
+      for (const st of STATIONS) { lists[st.id] = {}; for (const t of CHECKLIST_TYPES) lists[st.id][t.id] = []; }
+      Sync.start(db, {
+        defaults: { staff: DEFAULT_STAFF, codes, lists, ttk: DEFAULT_TTK, safety: DEFAULT_SAFETY },
+        onChange: onRemoteChange,
+        onError: (e) => {
+          if (e && e.code === 'quota_exceeded') toast('База заполнена — сообщите администратору');
+          else if (e && (e.code === 'invalid_argument' || e.code === 'not_granted')) toast('Нет прав на запись. Шефу нужно выдать доступ к странице');
+          else if (e && e.code !== 'revoked') toast('Не удалось сохранить. Проверьте интернет');
+        },
+      });
+      return;
+    }
+    await initLocal();
+  }
+
+  // Изменения пришли из общей базы (с другого устройства или своё подтверждение)
+  let pendingRender = false;
+  function onRemoteChange() {
+    if (state.user) {
+      const u = load(KEY.staff, []).find((x) => x.id === state.user.id);
+      if (!u || u.disabled) { logout(); return; }
+      state.user = u;
+    } else if (!state.restored && Sync.status === 'online') {
+      state.restored = true; restoreSession();
+    }
+    const a = document.activeElement;
+    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== 'ttk-search';
+    const formView = ['ttk-edit', 'member', 'shift-edit'].includes(state.view);
+    if (state.user && (typing || formView)) { pendingRender = true; return; }
+    render();
+  }
+
+  async function initLocal() {
     if (!load(KEY.staff)) save(KEY.staff, DEFAULT_STAFF);
     // Обновление уже установленного приложения: настоящие шеф и су-шефы вместо демо
     if ((load('bc_seed', 0) || 0) < 2) {
@@ -249,7 +293,7 @@
 
   /* ---------------- Навигация ---------------- */
   function go(view, params = {}) {
-    state.view = view; state.params = params;
+    state.view = view; state.params = params; pendingRender = false;
     if (state.user) save(KEY.session, { id: state.user.id, at: Date.now() });
     render();
     window.scrollTo(0, 0);
@@ -408,7 +452,7 @@
 
   function viewLogin() {
     if (state.group) return viewPickName();
-    const locked = Date.now() < state.lockedUntil;
+    const locked = Date.now() < state.lockedUntil || Sync.status === 'loading' || Sync.status === 'offline';
     const dots = [0, 1, 2, 3].map((i) => `<i class="${i < state.pin.length ? 'on' : ''}"></i>`).join('');
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
     return `
@@ -421,14 +465,16 @@
             </div>
             <div class="logo-tag">Кухня · Алматы</div>
           </div>
-          <p class="login-hint">${locked ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
+          <p class="login-hint">${Sync.status === 'loading' ? 'Подключение к общей базе…'
+            : Sync.status === 'offline' ? 'Нет связи с общей базой. Проверьте интернет — приложение подключится само.'
+            : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
           <div class="pin-dots">${dots}</div>
           <div class="keypad">
             ${keys.map((k) => k === ''
               ? '<span></span>'
               : `<button class="key${k === '⌫' ? ' key-del' : ''}" data-key="${k}" ${locked ? 'disabled' : ''} ${k === '⌫' ? 'aria-label="Стереть"' : ''}>${k === '⌫' ? ic('chevL', 24) : k}</button>`).join('')}
           </div>
-          <p class="login-foot">Служебное приложение для сотрудников кухни</p>
+          <p class="login-foot">Служебное приложение для сотрудников кухни${Sync.status === 'online' ? ' · общая база подключена' : Sync.status === 'local' ? ' · данные на этом устройстве' : ''}</p>
         </div>
       </main>`;
   }
@@ -1206,7 +1252,8 @@
   }
 
   /* ---------------- Старт ---------------- */
-  init().then(() => { restoreSession(); render(); });
+  render();
+  init().then(() => { if (Sync.status === 'local') restoreSession(); render(); });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
