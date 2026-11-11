@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#fffdf8"/>
+  <circle cx="256" cy="256" r="236" fill="#8fcde5"/>
+  <circle cx="256" cy="256" r="214" fill="none" stroke="#fffdf8" stroke-width="10"/>
+  <text x="256" y="292" text-anchor="middle" font-family="Pacifico, 'Brush Script MT', cursive" font-size="132" fill="#e2643b">BC</text>
+  <line x1="150" y1="350" x2="200" y2="350" stroke="#e2643b" stroke-width="5"/>
+  <line x1="312" y1="350" x2="362" y2="350" stroke="#e2643b" stroke-width="5"/>
+  <circle cx="256" cy="350" r="7" fill="#e2643b"/>
+</svg>
