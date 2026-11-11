@@ -95,9 +95,16 @@
 
   /* ---------------- Первичная инициализация ---------------- */
   async function init() {
-    // Общая база доступна только внутри опубликованной страницы claude.ai
-    if (window.claude?.use) Sync.connecting();
-    const db = window.claude?.use ? await window.claude.use('db').catch(() => null) : null;
+    // Общая база: своя (Firebase) на отдельном адресе или база страницы claude.ai
+    const firebaseCfg = typeof FIREBASE_CONFIG !== 'undefined' && FIREBASE_CONFIG && !window.claude?.use ? FIREBASE_CONFIG : null;
+    if (firebaseCfg || window.claude?.use) Sync.connecting();
+    let db = null;
+    if (firebaseCfg) {
+      db = await FirebaseDB.connect(firebaseCfg).catch((e) => { console.error(e); return null; });
+      if (!db) toast('Не удалось подключиться к базе. Работаем только на этом устройстве');
+    } else if (window.claude?.use) {
+      db = await window.claude.use('db').catch(() => null);
+    }
     if (!db) Sync.noDatabase();
     if (db) {
       const codes = {};
@@ -109,7 +116,7 @@
         onChange: onRemoteChange,
         onError: (e) => {
           if (e && e.code === 'quota_exceeded') toast('База заполнена — сообщите администратору');
-          else if (e && (e.code === 'invalid_argument' || e.code === 'not_granted')) toast('Нет прав на запись. Шефу нужно выдать доступ к странице');
+          else if (e && (e.code === 'invalid_argument' || e.code === 'not_granted')) toast(firebaseCfg ? 'База отклонила запись. Проверьте правила Firestore' : 'Нет прав на запись. Шефу нужно выдать доступ к странице');
           else if (e && e.code !== 'revoked') toast('Не удалось сохранить. Проверьте интернет');
         },
       });
