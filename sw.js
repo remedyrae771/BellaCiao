@@ -1,5 +1,5 @@
 /* Service worker: приложение работает офлайн после первого открытия */
-const CACHE = 'bellaciao-v2';
+const CACHE = 'bellaciao-v3';
 const ASSETS = ['./', './index.html', './css/styles.css', './js/data.js', './js/app.js', './manifest.json', './icons/icon.svg'];
 
 self.addEventListener('install', (e) => {

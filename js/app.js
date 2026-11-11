@@ -8,7 +8,9 @@
 
   /* ---------------- Хранилище ---------------- */
   const KEY = {
-    staff: 'bc_staff_v1',
+    staff: 'bc_staff_v2',
+    codes: 'bc_codes_v1',
+    shifts: 'bc_shifts_v1',
     ttk: 'bc_ttk_v1',
     safety: 'bc_safety_v1',
     lists: 'bc_checklists_v1',
@@ -38,6 +40,13 @@
   const fmtDate = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const fmtNum = (n) => (Math.round(n * 10) / 10).toLocaleString('ru-RU');
   const stationById = (id) => STATIONS.find((s) => s.id === id) || { name: id, short: id, icon: '•' };
+  const groupById = (id) => (id === 'chef' ? CHEF_GROUP : stationById(id));
+  const fmtDT = (ts) => new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const fmtDur = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return `${Math.floor(m / 60)} ч ${String(m % 60).padStart(2, '0')} мин`; };
+  const hours = (ms) => Math.round((ms / 3600000) * 100) / 100;
+  const money = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₸';
+  const dayStart = (dateStr) => new Date(dateStr + 'T00:00:00').getTime();
+  const toLocalInput = (ts) => { const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
 
   async function hashPin(pin) {
     const data = 'bellaciao::' + pin;
@@ -61,14 +70,14 @@
 
   /* ---------------- Первичная инициализация ---------------- */
   async function init() {
-    if (!load(KEY.staff)) {
-      const staff = [];
-      for (const s of DEFAULT_STAFF) {
-        const { pin, ...rest } = s;
-        staff.push({ ...rest, pinHash: await hashPin(pin), defaultPin: true });
-      }
-      save(KEY.staff, staff);
+    if (!load(KEY.staff)) save(KEY.staff, DEFAULT_STAFF);
+    if (!load(KEY.codes)) {
+      const codes = {};
+      for (const [g, code] of Object.entries(DEFAULT_CODES)) codes[g] = { hash: await hashPin(code), isDefault: true };
+      save(KEY.codes, codes);
     }
+    // старые данные с личными кодами больше не нужны
+    ['bc_staff_v1'].forEach((k) => localStorage.removeItem(k));
     if (!load(KEY.ttk)) save(KEY.ttk, DEFAULT_TTK);
     if (!load(KEY.safety)) save(KEY.safety, DEFAULT_SAFETY);
     if (!load(KEY.lists)) {
@@ -92,6 +101,7 @@
     view: 'home',
     params: {},
     pin: '',
+    group: null, // станция (или 'chef'), код которой введён — ждём выбора имени
     failed: 0,
     lockedUntil: 0,
   };
@@ -125,7 +135,7 @@
   }
 
   function logout() {
-    state.user = null; state.pin = ''; state.view = 'home'; state.params = {};
+    state.user = null; state.pin = ''; state.group = null; state.view = 'home'; state.params = {};
     localStorage.removeItem(KEY.session);
     clearTimeout(idleTimer);
     render();
@@ -135,14 +145,11 @@
     if (Date.now() < state.lockedUntil) return;
     const pin = state.pin;
     const h = await hashPin(pin);
-    const user = load(KEY.staff, []).find((u) => u.pinHash === h && !u.disabled);
-    if (user) {
-      state.user = user; state.pin = ''; state.failed = 0;
-      state.view = 'home'; state.params = {};
-      save(KEY.session, { id: user.id, at: Date.now() });
-      resetIdle();
+    const codes = load(KEY.codes, {});
+    const group = Object.keys(codes).find((g) => codes[g].hash === h);
+    if (group) {
+      state.group = group; state.pin = ''; state.failed = 0;
       render();
-      if (user.defaultPin) toast('Вы вошли со стандартным кодом — смените его в профиле');
     } else {
       state.failed++;
       state.pin = '';
@@ -156,6 +163,51 @@
       dots?.classList.add('shake');
     }
   }
+
+  // Сотрудники, которых можно выбрать после ввода кода станции
+  function groupMembers(group) {
+    return load(KEY.staff, []).filter((u) => !u.disabled &&
+      (group === 'chef' ? u.role === 'chef' : u.station === group && u.role !== 'chef'));
+  }
+
+  function pickUser(id) {
+    const user = groupMembers(state.group).find((u) => u.id === id);
+    if (!user) return;
+    state.user = user; state.group = null;
+    state.view = 'home'; state.params = {};
+    save(KEY.session, { id: user.id, at: Date.now() });
+    resetIdle();
+    render();
+  }
+
+  /* ---------------- Смены (учёт рабочего времени) ---------------- */
+  const allShifts = () => load(KEY.shifts, []);
+  const openShift = (userId) => allShifts().find((s) => s.uid === userId && !s.end);
+
+  function clockIn() {
+    if (openShift(state.user.id)) return;
+    const shifts = allShifts();
+    shifts.push({ id: 's' + uid(), uid: state.user.id, start: Date.now(), end: null, station: state.user.station });
+    save(KEY.shifts, shifts);
+    toast(`Смена начата в ${fmtTime(Date.now())}. Buon lavoro!`);
+  }
+
+  function clockOut() {
+    const shifts = allShifts();
+    const s = shifts.find((x) => x.uid === state.user.id && !x.end);
+    if (!s) return;
+    s.end = Date.now();
+    save(KEY.shifts, shifts);
+    toast(`Смена закрыта: ${fmtDur(s.end - s.start)}. Grazie!`);
+  }
+
+  // Смены, начавшиеся в периоде [from, to] (даты 'YYYY-MM-DD' включительно)
+  function shiftsInPeriod(from, to) {
+    const a = dayStart(from), b = dayStart(to) + 864e5;
+    return allShifts().filter((s) => s.start >= a && s.start < b).sort((x, y) => x.start - y.start);
+  }
+  const shiftMs = (s) => (s.end || Date.now()) - s.start;
+  const LONG_SHIFT_MS = 16 * 3600000;
 
   /* ---------------- Навигация ---------------- */
   function go(view, params = {}) {
@@ -228,9 +280,57 @@
     ).join('')}</nav>`;
   }
 
+  // Карточка «Начать / закончить смену» на главной
+  function shiftCard() {
+    const open = openShift(state.user.id);
+    const now = new Date();
+    const monthFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthMs = shiftsInPeriod(monthFrom, today()).filter((s) => s.uid === state.user.id).reduce((a, s) => a + shiftMs(s), 0);
+    return `<section class="shift-card ${open ? 'is-open' : ''}">
+      <div class="shift-info">
+        <div class="eyebrow">${open ? 'Вы на смене' : 'Смена не начата'}</div>
+        ${open
+          ? `<div class="shift-timer" data-since="${open.start}">${fmtDur(Date.now() - open.start)}</div>
+             <small>Начало: ${fmtTime(open.start)} · ${fmtDate(open.start)}</small>`
+          : `<div class="shift-timer muted-t">—</div><small>Отметьте приход, когда начинаете работу</small>`}
+        <small class="shift-month">За этот месяц: <b>${fmtNum(hours(monthMs))} ч</b></small>
+      </div>
+      ${open
+        ? `<button class="btn btn-big btn-out" data-clock="out">Закончить смену</button>`
+        : `<button class="btn btn-big" data-clock="in">Начать смену</button>`}
+    </section>`;
+  }
+
   /* ================= ЭКРАНЫ ================= */
 
+  function viewPickName() {
+    const g = groupById(state.group);
+    const members = groupMembers(state.group);
+    return `
+      <main class="login">
+        <div class="login-card pick">
+          <div class="pick-head">
+            <span class="st-icon">${g.icon}</span>
+            <div><div class="eyebrow">${esc(g.name)}</div><h2>Кто вы?</h2></div>
+          </div>
+          <div class="pick-list">
+            ${members.map((u) => {
+              const open = openShift(u.id);
+              return `<button class="pick-row" data-pick="${u.id}">
+                <span class="avatar lg">${esc(initials(u.name))}</span>
+                <span class="pick-body"><b>${esc(u.name)}</b>
+                  <small>${ROLES[u.role].name}${open ? ` · <span class="on-shift">на смене с ${fmtTime(open.start)}</span>` : ''}</small></span>
+                <span class="chev">›</span>
+              </button>`;
+            }).join('') || '<p class="empty">На этой станции пока нет сотрудников. Шеф добавляет их в разделе «Команда».</p>'}
+          </div>
+          <button class="btn btn-ghost wide" data-cancel-pick>‹ Другой код</button>
+        </div>
+      </main>`;
+  }
+
   function viewLogin() {
+    if (state.group) return viewPickName();
     const locked = Date.now() < state.lockedUntil;
     const dots = [0, 1, 2, 3].map((i) => `<i class="${i < state.pin.length ? 'on' : ''}"></i>`).join('');
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
@@ -244,7 +344,7 @@
             </div>
             <div class="logo-tag">CUCINA · ALMATY</div>
           </div>
-          <p class="login-hint">${locked ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите ваш личный код'}</p>
+          <p class="login-hint">${locked ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
           <div class="pin-dots">${dots}</div>
           <div class="keypad">
             ${keys.map((k) => k === ''
@@ -273,8 +373,19 @@
           <div class="hero-meta">${ROLES[u.role].name} · ${esc(stationById(u.station).name)} · ${fmtDate(Date.now())}</div>
         </section>
 
-        ${u.defaultPin ? `<div class="alert" data-go="profile">🔐 Вы используете стандартный код. <b>Смените его</b> — нажмите здесь.</div>` : ''}
+        ${shiftCard()}
+        ${can.manageTeam() && Object.values(load(KEY.codes, {})).some((c) => c.isDefault)
+          ? `<div class="alert" data-go="team" data-tab="codes">🔐 Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</div>` : ''}
         ${unread ? `<div class="alert alert-olive" data-go="safety">⛑ Не прочитано разделов ТБ: <b>${unread}</b>. Ознакомьтесь и подтвердите.</div>` : ''}
+
+        ${can.report() ? (() => {
+          const staff = load(KEY.staff, []);
+          const on = allShifts().filter((x) => !x.end);
+          return `<button class="card now-card now-home" data-go="team" data-tab="hours">
+            <div class="eyebrow">Сейчас на смене · ${on.length}</div>
+            <div class="now-names">${on.map((x) => `<span class="name-chip"><span class="dot-live"></span>${esc((staff.find((u) => u.id === x.uid) || { name: '—' }).name)}</span>`).join('') || '<span class="muted">Никого нет</span>'}</div>
+          </button>`;
+        })() : ''}
 
         <h2 class="section-title">Чек-листы на сегодня</h2>
         <div class="grid">
@@ -292,7 +403,7 @@
         <div class="quick">
           <button class="card quick-card" data-go="ttk"><span>📖</span><b>ТТК</b><small>Технологические карты</small></button>
           <button class="card quick-card" data-go="safety"><span>⛑</span><b>Техника безопасности</b><small>Правила и инструкции</small></button>
-          ${can.report() ? `<button class="card quick-card" data-go="team"><span>📊</span><b>Отчёт смены</b><small>Выполнение по станциям</small></button>` : ''}
+          ${can.report() ? `<button class="card quick-card" data-go="team"><span>📊</span><b>Табель</b><small>Часы и оплата</small></button>` : ''}
         </div>
       </main>${nav()}`;
   }
@@ -490,12 +601,21 @@
       </main>${nav()}`;
   }
 
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  function periodPreset(id) {
+    const d = new Date();
+    if (id === 'today') return [today(), today()];
+    if (id === 'week') { const m = new Date(d); m.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return [ymd(m), today()]; }
+    if (id === 'prev') { const f = new Date(d.getFullYear(), d.getMonth() - 1, 1); const l = new Date(d.getFullYear(), d.getMonth(), 0); return [ymd(f), ymd(l)]; }
+    return [ymd(new Date(d.getFullYear(), d.getMonth(), 1)), today()];
+  }
+
   function viewTeam() {
     const staff = load(KEY.staff, []);
     const acks = load(KEY.acks, {});
     const safety = load(KEY.safety, []);
     const date = state.params.date || today();
-    const tab = state.params.tab || 'report';
+    const tab = state.params.tab || 'hours';
 
     const report = `
       <div class="date-row">
@@ -525,8 +645,8 @@
             <div class="avatar lg">${esc(initials(u.name))}</div>
             <div class="m-body">
               <b>${esc(u.name)}</b>
-              <small>${ROLES[u.role].name} · ${esc(stationById(u.station).name)}</small>
-              <small>ТБ: ${ackN}/${relevant.length} ${u.defaultPin ? ' · <span class="warn-t">стандартный код</span>' : ''}${u.disabled ? ' · отключён' : ''}</small>
+              <small>${ROLES[u.role].name} · ${esc(u.role === 'chef' ? 'вход по коду шефа' : stationById(u.station).name)}</small>
+              <small>ТБ: ${ackN}/${relevant.length}${can.manageTeam() && u.rate ? ` · ${money(u.rate)}/ч` : ''}${u.disabled ? ' · отключён' : ''}</small>
             </div>
             ${can.manageTeam() ? `<button class="icon-btn" data-go="member" data-id="${u.id}" aria-label="Изменить">✎</button>` : ''}
           </div>`;
@@ -534,14 +654,108 @@
       </div>
       ${can.manageTeam() ? `<button class="fab" data-go="member" aria-label="Добавить сотрудника">＋</button>` : ''}`;
 
+    const tabs = [['hours', '⏱ Табель'], ['report', '📊 Чек-листы'], ['staff', '👥 Люди']];
+    if (can.manageTeam()) tabs.push(['codes', '🔐 Коды']);
+    const body = { hours: timesheet, report: () => report, staff: () => team, codes: codesTab }[tab] || timesheet;
+
     return `${header('Команда')}
       <main class="page">
-        <div class="segmented two">
-          <button class="${tab === 'report' ? 'on' : ''}" data-go="team" data-tab="report">📊 Отчёт смены</button>
-          <button class="${tab === 'staff' ? 'on' : ''}" data-go="team" data-tab="staff">👥 Сотрудники</button>
+        <div class="segmented" style="grid-template-columns:repeat(${tabs.length},1fr)">
+          ${tabs.map(([id, l]) => `<button class="${tab === id ? 'on' : ''}" data-go="team" data-tab="${id}">${l}</button>`).join('')}
         </div>
-        ${tab === 'report' ? report : team}
+        ${body()}
       </main>${nav()}`;
+  }
+
+  // Табель: часы и оплата по сотрудникам за период
+  function timesheet() {
+    const [defFrom, defTo] = periodPreset('month');
+    const from = state.params.from || defFrom, to = state.params.to || defTo;
+    const staff = load(KEY.staff, []);
+    const shifts = shiftsInPeriod(from, to);
+    const showMoney = can.manageTeam();
+    const onShift = allShifts().filter((s) => !s.end);
+    const nameOf = (id) => (staff.find((u) => u.id === id) || { name: 'Удалённый сотрудник' }).name;
+
+    const rows = staff.map((u) => {
+      const list = shifts.filter((s) => s.uid === u.id);
+      const ms = list.reduce((a, s) => a + shiftMs(s), 0);
+      return { u, list, h: hours(ms), sum: hours(ms) * (u.rate || 0) };
+    }).filter((r) => r.list.length);
+    const totalH = rows.reduce((a, r) => a + r.h, 0), totalSum = rows.reduce((a, r) => a + r.sum, 0);
+
+    return `
+      <div class="card now-card">
+        <div class="eyebrow">Сейчас на смене · ${onShift.length}</div>
+        ${onShift.length ? `<ul class="now-list">${onShift.map((s) => `<li>
+            <span class="dot-live"></span><b>${esc(nameOf(s.uid))}</b>
+            <small>${esc(stationById(s.station).short)} · с ${fmtTime(s.start)} · ${fmtDur(Date.now() - s.start)}</small>
+            ${Date.now() - s.start > LONG_SHIFT_MS ? '<span class="pill">забыл отметить уход?</span>' : ''}
+          </li>`).join('')}</ul>` : '<p class="muted">Никого нет на смене</p>'}
+      </div>
+
+      <div class="chips period">
+        ${[['today', 'Сегодня'], ['week', 'Неделя'], ['month', 'Этот месяц'], ['prev', 'Прошлый месяц']].map(([id, l]) => {
+          const [f, t] = periodPreset(id);
+          return `<button class="chip ${f === from && t === to ? 'on' : ''}" data-go="team" data-tab="hours" data-from="${f}" data-to="${t}">${l}</button>`;
+        }).join('')}
+      </div>
+      <div class="date-row two">
+        <label>С <input type="date" id="ts-from" value="${from}" max="${today()}"/></label>
+        <label>По <input type="date" id="ts-to" value="${to}" max="${today()}"/></label>
+      </div>
+
+      <div class="ts-total card">
+        <div><small>Всего часов</small><b>${fmtNum(totalH)}</b></div>
+        <div><small>Смен</small><b>${shifts.length}</b></div>
+        ${showMoney ? `<div><small>К оплате</small><b>${money(totalSum)}</b></div>` : ''}
+      </div>
+
+      <div class="ts-list">
+        ${rows.map((r) => `
+          <details class="card ts-row">
+            <summary>
+              <span class="avatar lg">${esc(initials(r.u.name))}</span>
+              <span class="m-body"><b>${esc(r.u.name)}</b><small>${ROLES[r.u.role].name} · смен: ${r.list.length}${showMoney ? ` · ${money(r.u.rate || 0)}/ч` : ''}</small></span>
+              <span class="ts-num"><b>${fmtNum(r.h)} ч</b>${showMoney ? `<small>${money(r.sum)}</small>` : ''}</span>
+            </summary>
+            <table class="ing ts-table">
+              <thead><tr><th>Приход</th><th>Уход</th><th>Часы</th>${showMoney ? '<th></th>' : ''}</tr></thead>
+              <tbody>${r.list.map((s) => `<tr class="${!s.end ? 'open-row' : ''}">
+                <td>${fmtDT(s.start)}</td>
+                <td>${s.end ? fmtDT(s.end) : '<span class="on-shift">на смене</span>'}</td>
+                <td>${fmtNum(hours(shiftMs(s)))}${s.edited ? ' <span title="Исправлено шефом">✎</span>' : ''}</td>
+                ${showMoney ? `<td><button class="icon-btn sm" data-go="shift-edit" data-id="${s.id}" aria-label="Исправить">✎</button></td>` : ''}
+              </tr>`).join('')}</tbody>
+            </table>
+          </details>`).join('') || '<p class="empty">За этот период смен нет</p>'}
+      </div>
+
+      <div class="row-btns">
+        <button class="btn btn-ghost" data-export="${from}|${to}">⬇ Скачать табель (CSV)</button>
+        ${showMoney ? `<button class="btn" data-go="shift-edit">＋ Добавить смену</button>` : ''}
+      </div>`;
+  }
+
+  // Коды входа станций (только шеф)
+  function codesTab() {
+    const codes = load(KEY.codes, {});
+    const groups = [...STATIONS, CHEF_GROUP];
+    return `
+      <p class="lead">У каждой станции свой код. После ввода кода сотрудник выбирает себя из списка поваров этой станции.
+        Сами повара коды менять не могут.</p>
+      <div class="codes">
+        ${groups.map((g) => `
+          <form class="card code-row" data-form="code" data-group="${g.id}">
+            <span class="st-icon">${g.icon}</span>
+            <span class="m-body"><b>${esc(g.name)}</b>
+              <small>${codes[g.id]?.isDefault ? '<span class="warn-t">стандартный код — смените</span>' : 'код установлен'} · ${groupMembers(g.id).length} чел.</small></span>
+            <span class="code-in">
+              <input name="code" inputmode="numeric" pattern="\\d{4}" maxlength="4" placeholder="••••" required autocomplete="off" aria-label="Новый код"/>
+              <button class="btn">Сохранить</button>
+            </span>
+          </form>`).join('')}
+      </div>`;
   }
 
   function missing(station, date) {
@@ -556,7 +770,7 @@
   }
 
   function viewMember() {
-    const u = load(KEY.staff, []).find((x) => x.id === state.params.id) || { id: '', name: '', role: 'cook', station: 'cold' };
+    const u = load(KEY.staff, []).find((x) => x.id === state.params.id) || { id: '', name: '', role: 'cook', station: 'cold', rate: '' };
     return `${header(u.id ? 'Сотрудник' : 'Новый сотрудник', 'team')}
       <main class="page">
         <form class="form" data-form="member" data-id="${u.id}">
@@ -565,12 +779,12 @@
             <label>Должность
               <select name="role">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${r.name}</option>`).join('')}</select>
             </label>
-            <label>Станция
+            <label>Станция (по её коду входит)
               <select name="station">${STATIONS.map((s) => `<option value="${s.id}" ${s.id === u.station ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
             </label>
+            <label>Ставка, ₸ в час<input name="rate" type="number" min="0" step="50" value="${esc(u.rate)}"/></label>
           </div>
-          <label>${u.id ? 'Новый код (оставьте пустым, чтобы не менять)' : 'Личный код (4 цифры)'}
-            <input name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" ${u.id ? '' : 'required'} autocomplete="off"/></label>
+          <p class="muted">Шеф-повар входит по коду шефа, су-шефы — по коду раздачи, повара — по коду своей станции.</p>
           ${u.id ? `<label class="check"><input type="checkbox" name="disabled" ${u.disabled ? 'checked' : ''}/> Доступ отключён (уволен / в отпуске)</label>` : ''}
           <button class="btn wide">Сохранить</button>
           ${u.id && u.id !== state.user.id ? `<button type="button" class="btn btn-ghost danger wide" data-del-member="${u.id}">Удалить сотрудника</button>` : ''}
@@ -578,8 +792,30 @@
       </main>${nav()}`;
   }
 
+  function viewShiftEdit() {
+    const staff = load(KEY.staff, []);
+    const s = allShifts().find((x) => x.id === state.params.id) || { id: '', uid: staff[0]?.id, start: Date.now() - 8 * 3600000, end: Date.now() };
+    return `${header(s.id ? 'Исправить смену' : 'Новая смена', 'team')}
+      <main class="page">
+        <form class="form" data-form="shift" data-id="${s.id}">
+          <label>Сотрудник
+            <select name="uid">${staff.map((u) => `<option value="${u.id}" ${u.id === s.uid ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
+          </label>
+          <div class="form-row">
+            <label>Приход<input type="datetime-local" name="start" required value="${toLocalInput(s.start)}"/></label>
+            <label>Уход <small>— пусто, если ещё на смене</small><input type="datetime-local" name="end" value="${s.end ? toLocalInput(s.end) : ''}"/></label>
+          </div>
+          <button class="btn wide">Сохранить</button>
+          ${s.id ? `<button type="button" class="btn btn-ghost danger wide" data-del-shift="${s.id}">Удалить смену</button>` : ''}
+        </form>
+      </main>${nav()}`;
+  }
+
   function viewProfile() {
     const u = state.user;
+    const [from, to] = periodPreset('month');
+    const mine = shiftsInPeriod(from, to).filter((s) => s.uid === u.id).reverse();
+    const total = mine.reduce((a, s) => a + shiftMs(s), 0);
     return `${header('Профиль', 'home')}
       <main class="page">
         <div class="profile-card card">
@@ -587,13 +823,13 @@
           <h2>${esc(u.name)}</h2>
           <p class="muted">${ROLES[u.role].name} · ${esc(stationById(u.station).name)}</p>
         </div>
-        <h2 class="section-title">Сменить личный код</h2>
-        <form class="form" data-form="pin">
-          <label>Текущий код<input name="old" type="password" inputmode="numeric" maxlength="4" required autocomplete="off"/></label>
-          <label>Новый код (4 цифры)<input name="new1" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" required autocomplete="off"/></label>
-          <label>Повторите новый код<input name="new2" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" required autocomplete="off"/></label>
-          <button class="btn wide">Сохранить код</button>
-        </form>
+        ${shiftCard()}
+        <h2 class="section-title">Мои смены за месяц · ${fmtNum(hours(total))} ч</h2>
+        ${mine.length ? `<table class="ing ts-table">
+          <thead><tr><th>Приход</th><th>Уход</th><th>Часы</th></tr></thead>
+          <tbody>${mine.map((s) => `<tr><td>${fmtDT(s.start)}</td><td>${s.end ? fmtDT(s.end) : '<span class="on-shift">на смене</span>'}</td><td>${fmtNum(hours(shiftMs(s)))}</td></tr>`).join('')}</tbody>
+        </table>` : '<p class="empty">В этом месяце смен пока нет</p>'}
+        <p class="muted">Ошиблись с отметкой? Скажите су-шефу или шефу — он исправит время в табеле.</p>
         <button class="btn btn-dark wide" data-logout>Выйти</button>
       </main>${nav()}`;
   }
@@ -602,6 +838,7 @@
   const VIEWS = {
     home: viewHome, checklists: viewChecklists, ttk: viewTtk, 'ttk-view': viewTtkDetail,
     'ttk-edit': viewTtkEdit, safety: viewSafety, team: viewTeam, member: viewMember, profile: viewProfile,
+    'shift-edit': viewShiftEdit,
   };
 
   function render() {
@@ -610,9 +847,15 @@
     document.body.className = '';
     // защита маршрутов
     if ((state.view === 'team' && !can.report()) || (state.view === 'member' && !can.manageTeam())
+      || (state.view === 'shift-edit' && !can.manageTeam())
       || (state.view === 'ttk-edit' && !can.editTtk())) state.view = 'home';
     app.innerHTML = (VIEWS[state.view] || viewHome)();
   }
+
+  // Живой таймер смены
+  setInterval(() => {
+    document.querySelectorAll('.shift-timer[data-since]').forEach((el) => { el.textContent = fmtDur(Date.now() - Number(el.dataset.since)); });
+  }, 30000);
 
   /* ---------------- События ---------------- */
   document.addEventListener('click', async (e) => {
@@ -627,6 +870,21 @@
       if (state.pin.length === 4) setTimeout(tryLogin, 120);
       return;
     }
+    if (d.pick) { pickUser(d.pick); return; }
+    if (el.hasAttribute('data-cancel-pick')) { state.group = null; render(); return; }
+    if (d.clock) {
+      if (d.clock === 'in') clockIn();
+      else if (confirm('Закончить смену сейчас?')) clockOut();
+      else return;
+      if (navigator.vibrate) navigator.vibrate(30);
+      render(); return;
+    }
+    if (d.delShift) {
+      if (!confirm('Удалить эту смену?')) return;
+      save(KEY.shifts, allShifts().filter((x) => x.id !== d.delShift));
+      toast('Смена удалена'); go('team', { tab: 'hours' }); return;
+    }
+    if (d.export) { exportCsv(...d.export.split('|')); return; }
     if (d.check) {
       toggleCheck(d.station, d.type, d.check);
       if (navigator.vibrate) navigator.vibrate(15);
@@ -664,12 +922,13 @@
 
     if (d.go) {
       const p = {};
-      for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit']) if (d[k] !== undefined) p[k] = d[k];
+      for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit', 'from', 'to']) if (d[k] !== undefined) p[k] = d[k];
       if (d.go === 'ttk-view' && !p.id) p.id = state.params.id;
       if (d.go === 'checklists') {
         if (!p.station) p.station = state.params.station;
         if (!p.type && p.station === state.params.station) p.type = state.params.type;
       }
+      if (d.go === 'team' && p.tab === 'hours' && !p.from && state.params.from) { p.from = state.params.from; p.to = state.params.to; }
       if (d.go === 'ttk' && p.station === undefined && state.view === 'ttk') p.station = state.params.station;
       go(d.go, p);
     }
@@ -685,6 +944,10 @@
       if (it) { it.text = t.value.trim() || it.text; save(KEY.lists, lists); toast('Сохранено'); }
     }
     if (t.id === 'report-date') go('team', { tab: 'report', date: t.value });
+    if (t.id === 'ts-from' || t.id === 'ts-to') {
+      let from = $('#ts-from').value, to = $('#ts-to').value;
+      if (from && to) { if (from > to) [from, to] = [to, from]; go('team', { tab: 'hours', from, to }); }
+    }
   });
 
   document.addEventListener('input', (e) => {
@@ -732,37 +995,64 @@
     if (type === 'member') {
       const staff = load(KEY.staff, []);
       const id = f.dataset.id;
-      let pinHash;
-      if (fd.pin) {
-        if (!/^\d{4}$/.test(fd.pin)) return toast('Код — ровно 4 цифры');
-        pinHash = await hashPin(fd.pin);
-        if (staff.some((u) => u.pinHash === pinHash && u.id !== id)) return toast('Такой код уже занят — выберите другой');
-      }
+      const fields = { name: fd.name.trim(), role: fd.role, station: fd.station, rate: Math.max(0, Number(fd.rate) || 0) };
       if (id) {
         const u = staff.find((x) => x.id === id);
-        Object.assign(u, { name: fd.name.trim(), role: fd.role, station: fd.station, disabled: !!fd.disabled });
-        if (pinHash) { u.pinHash = pinHash; u.defaultPin = false; }
+        Object.assign(u, fields, { disabled: !!fd.disabled });
         if (u.id === state.user.id) state.user = u;
       } else {
-        staff.push({ id: 'u' + uid(), name: fd.name.trim(), role: fd.role, station: fd.station, pinHash, defaultPin: false });
+        staff.push({ id: 'u' + uid(), ...fields });
       }
       if (!staff.some((u) => u.role === 'chef' && !u.disabled)) return toast('Должен остаться хотя бы один активный шеф-повар');
       save(KEY.staff, staff); toast('Сохранено'); go('team', { tab: 'staff' });
     }
 
-    if (type === 'pin') {
-      const staff = load(KEY.staff, []);
-      const u = staff.find((x) => x.id === state.user.id);
-      if (await hashPin(fd.old) !== u.pinHash) return toast('Текущий код неверный');
-      if (!/^\d{4}$/.test(fd.new1)) return toast('Код — ровно 4 цифры');
-      if (fd.new1 !== fd.new2) return toast('Коды не совпадают');
-      const h = await hashPin(fd.new1);
-      if (staff.some((x) => x.pinHash === h && x.id !== u.id)) return toast('Такой код уже занят — выберите другой');
-      u.pinHash = h; u.defaultPin = false;
-      save(KEY.staff, staff); state.user = u;
-      toast('Код изменён'); go('home');
+    if (type === 'code') {
+      if (!/^\d{4}$/.test(fd.code)) return toast('Код — ровно 4 цифры');
+      const codes = load(KEY.codes, {});
+      const h = await hashPin(fd.code);
+      if (Object.entries(codes).some(([g, c]) => g !== f.dataset.group && c.hash === h)) return toast('Этот код уже у другой станции');
+      codes[f.dataset.group] = { hash: h, isDefault: false };
+      save(KEY.codes, codes);
+      toast(`Код «${groupById(f.dataset.group).name}» изменён`);
+      go('team', { tab: 'codes' });
+    }
+
+    if (type === 'shift') {
+      const start = new Date(fd.start).getTime();
+      const end = fd.end ? new Date(fd.end).getTime() : null;
+      if (!start) return toast('Укажите время прихода');
+      if (end && end <= start) return toast('Уход должен быть позже прихода');
+      const shifts = allShifts();
+      const u = load(KEY.staff, []).find((x) => x.id === fd.uid);
+      if (!end && shifts.some((x) => x.uid === fd.uid && !x.end && x.id !== f.dataset.id)) return toast('У сотрудника уже есть открытая смена');
+      const rec = { uid: fd.uid, start, end, station: u?.station, edited: true, editedBy: state.user.name };
+      const ex = shifts.find((x) => x.id === f.dataset.id);
+      if (ex) Object.assign(ex, rec); else shifts.push({ id: 's' + uid(), ...rec });
+      save(KEY.shifts, shifts); toast('Смена сохранена'); go('team', { tab: 'hours' });
     }
   });
+
+  // Выгрузка табеля в CSV (открывается в Excel / Google Таблицах)
+  function exportCsv(from, to) {
+    const staff = load(KEY.staff, []);
+    const money = can.manageTeam();
+    const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const rows = [['Сотрудник', 'Должность', 'Станция', 'Приход', 'Уход', 'Часы', ...(money ? ['Ставка ₸/ч', 'Сумма ₸'] : [])]];
+    for (const s of shiftsInPeriod(from, to)) {
+      const u = staff.find((x) => x.id === s.uid) || { name: '—', role: 'cook', rate: 0 };
+      const h = hours(shiftMs(s));
+      rows.push([u.name, ROLES[u.role].name, stationById(s.station).name,
+        new Date(s.start).toLocaleString('ru-RU'), s.end ? new Date(s.end).toLocaleString('ru-RU') : 'на смене',
+        String(h).replace('.', ','), ...(money ? [u.rate || 0, String(Math.round(h * (u.rate || 0)))] : [])]);
+    }
+    const csv = '\ufeff' + rows.map((r) => r.map(q).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `tabel_${from}_${to}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
 
   /* ---------------- Старт ---------------- */
   init().then(() => { restoreSession(); render(); });

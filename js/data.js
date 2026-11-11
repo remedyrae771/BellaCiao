@@ -20,15 +20,24 @@ const ROLES = {
   cook:  { name: 'Повар',     level: 1 },
 };
 
-/* PIN-коды по умолчанию — ОБЯЗАТЕЛЬНО смените после первого входа */
+/* Коды входа: у каждой станции свой код + отдельный код шеф-повара.
+   После ввода кода сотрудник выбирает себя из списка поваров этой станции.
+   ОБЯЗАТЕЛЬНО смените коды (Команда → Коды) перед началом работы. */
+const CHEF_GROUP = { id: 'chef', name: 'Шеф-повар', short: 'Шеф', icon: '👨‍🍳' };
+const DEFAULT_CODES = {
+  cold: '1111', pasta: '2222', grill: '3333', pass: '4444',
+  pizza: '5555', pastry: '6666', chef: '0000',
+};
+
+/* Сотрудники по умолчанию (демо). rate — ставка, ₸ в час */
 const DEFAULT_STAFF = [
-  { id: 'u1', name: 'Шеф-повар',      role: 'chef', station: 'pass',   pin: '0000' },
-  { id: 'u2', name: 'Су-шеф (демо)',  role: 'sous', station: 'pass',   pin: '4444' },
-  { id: 'u3', name: 'Повар холодного цеха (демо)', role: 'cook', station: 'cold', pin: '1111' },
-  { id: 'u4', name: 'Повар пасты (демо)',  role: 'cook', station: 'pasta',  pin: '2222' },
-  { id: 'u5', name: 'Повар гриля (демо)',  role: 'cook', station: 'grill',  pin: '3333' },
-  { id: 'u6', name: 'Пиццайоло (демо)',    role: 'cook', station: 'pizza',  pin: '5555' },
-  { id: 'u7', name: 'Кондитер (демо)',     role: 'cook', station: 'pastry', pin: '6666' },
+  { id: 'u1', name: 'Шеф-повар',      role: 'chef', station: 'pass',   rate: 0 },
+  { id: 'u2', name: 'Су-шеф (демо)',  role: 'sous', station: 'pass',   rate: 2500 },
+  { id: 'u3', name: 'Повар холодного цеха (демо)', role: 'cook', station: 'cold', rate: 1500 },
+  { id: 'u4', name: 'Повар пасты (демо)',  role: 'cook', station: 'pasta',  rate: 1500 },
+  { id: 'u5', name: 'Повар гриля (демо)',  role: 'cook', station: 'grill',  rate: 1500 },
+  { id: 'u6', name: 'Пиццайоло (демо)',    role: 'cook', station: 'pizza',  rate: 1500 },
+  { id: 'u7', name: 'Кондитер (демо)',     role: 'cook', station: 'pastry', rate: 1500 },
 ];
 
 /* ---------- Чек-листы ----------
