@@ -1,8 +1,7 @@
 /* ============================================================
    Настройки базы Firebase для отдельного адреса приложения.
 
-   Пока здесь null, приложение на своём адресе хранит данные только
-   на устройстве. Чтобы включить общую базу:
+   Проект Firebase: bella-ciao-d2f72. Как создавался:
      1. console.firebase.google.com → «Создать проект».
      2. Build → Firestore Database → «Создать базу» (регион europe-west).
      3. Build → Authentication → «Начать» → Sign-in method → Anonymous → включить.
@@ -13,7 +12,14 @@
    Эти ключи не секретные: они всегда видны в коде веб-приложения,
    доступ к данным ограничивают правила Firestore.
    ============================================================ */
-const FIREBASE_CONFIG = null;
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyBfcZieygCaaYgu4HVXarAukTJc8fxCcMs',
+  authDomain: 'bella-ciao-d2f72.firebaseapp.com',
+  projectId: 'bella-ciao-d2f72',
+  storageBucket: 'bella-ciao-d2f72.firebasestorage.app',
+  messagingSenderId: '851782613998',
+  appId: '1:851782613998:web:20c8cff01d4fda90aaecff',
+};
 /* Пример:
 const FIREBASE_CONFIG = {
   apiKey: '...',

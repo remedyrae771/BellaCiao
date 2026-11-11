@@ -1282,6 +1282,7 @@
   }
 
   /* ---------------- Старт ---------------- */
+  if ((typeof FIREBASE_CONFIG !== 'undefined' && FIREBASE_CONFIG) || window.claude?.use) Sync.connecting();
   render();
   init().then(() => { if (Sync.status === 'local') restoreSession(); render(); });
 
