@@ -13,7 +13,7 @@
     shifts: 'bc_shifts_v1',
     ttk: 'bc_ttk_v1',
     safety: 'bc_safety_v1',
-    lists: 'bc_checklists_v1',
+    lists: 'bc_checklists_v2',
     checks: 'bc_checks_v1',
     acks: 'bc_acks_v1',
     session: 'bc_session_v1',
@@ -77,7 +77,7 @@
       save(KEY.codes, codes);
     }
     // старые данные с личными кодами больше не нужны
-    ['bc_staff_v1'].forEach((k) => localStorage.removeItem(k));
+    ['bc_staff_v1', 'bc_checklists_v1'].forEach((k) => localStorage.removeItem(k));
     if (!load(KEY.ttk)) save(KEY.ttk, DEFAULT_TTK);
     if (!load(KEY.safety)) save(KEY.safety, DEFAULT_SAFETY);
     if (!load(KEY.lists)) {
@@ -85,10 +85,7 @@
       for (const st of STATIONS) {
         lists[st.id] = {};
         for (const t of CHECKLIST_TYPES) {
-          lists[st.id][t.id] = [
-            ...(COMMON_CHECKLISTS[t.id] || []),
-            ...((STATION_CHECKLISTS[st.id] || {})[t.id] || []),
-          ].map((text) => ({ id: uid(), text }));
+          lists[st.id][t.id] = [];
         }
       }
       save(KEY.lists, lists);
@@ -109,7 +106,7 @@
   const can = {
     allStations: () => ROLES[state.user.role].level >= 2,
     editTtk: () => ROLES[state.user.role].level >= 2,
-    editLists: () => state.user.role === 'chef',
+    editLists: () => ROLES[state.user.role].level >= 2, // шеф и су-шефы
     manageTeam: () => state.user.role === 'chef',
     report: () => ROLES[state.user.role].level >= 2,
   };
@@ -257,7 +254,7 @@
     clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
     chart: 'M4 20V11M10 20V5M16 20v-6M2 20h20',
     lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
-    chevL: 'M15 18l-6-6 6-6', chevR: 'M9 6l6 6-6 6',
+    chevL: 'M15 18l-6-6 6-6', chevR: 'M9 6l6 6-6 6', chevUp: 'M6 15l6-6 6 6', chevDown: 'M6 9l6 6 6-6',
     plus: 'M12 5v14M5 12h14', minus: 'M5 12h14',
     edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
     download: 'M12 3v12M7 10l5 5 5-5M4 21h16',
@@ -304,7 +301,7 @@
       <div class="ceramic-rule"></div>
     </div>`;
 
-  const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const initials = (name) => name.split(/\s+/).filter((w) => /^[\p{L}]/u.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
   function nav() {
     const items = [
@@ -432,7 +429,7 @@
             const p = stationProgress(s.id);
             return `<button class="card station-card" data-go="checklists" data-station="${s.id}">
               <span class="st-icon">${ic(s.icon, 22)}</span>
-              <span class="st-body"><b>${esc(s.name)}</b><small>${p.n} из ${p.total} пунктов</small></span>
+              <span class="st-body"><b>${esc(s.name)}</b><small>${p.total ? `${p.n} из ${p.total} пунктов` : 'Чек-лист не заполнен'}</small></span>
               ${ring(p.pct)}
             </button>`;
           }).join('')}
@@ -477,29 +474,42 @@
           ${ring(p.pct, 64)}
         </div>
 
+        ${!items.length && !editing ? `
+          <div class="card empty-list">
+            ${ic('checklist', 32)}
+            <b>Чек-лист пока пустой</b>
+            <p class="muted">${can.editLists() ? 'Добавьте пункты — их увидят все повара этой станции.' : 'Пункты заполняет шеф-повар или су-шеф.'}</p>
+            ${can.editLists() ? `<button class="btn" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">${ic('plus', 18)} Заполнить чек-лист</button>` : ''}
+          </div>` : `
         <ul class="checklist">
-          ${items.map((it) => {
+          ${items.map((it, i) => {
             const d = done[it.id];
-            return `<li class="${d ? 'done' : ''}">
+            return `<li class="${d ? 'done' : ''}${editing ? ' editing' : ''}">
               ${editing
-                ? `<input class="edit-input" data-edit-item="${it.id}" value="${esc(it.text)}"/>
-                   <button class="icon-btn danger" data-del-item="${it.id}" aria-label="Удалить">${ic('x', 18)}</button>`
+                ? `<span class="num">${i + 1}</span>
+                   <textarea class="edit-input" rows="${Math.min(4, Math.max(1, Math.ceil(it.text.length / 26)))}" data-edit-item="${it.id}" data-station="${st}" data-type="${type}" aria-label="Пункт ${i + 1}">${esc(it.text)}</textarea>
+                   <span class="move">
+                     <button class="icon-btn sm" data-move-item="${it.id}" data-dir="-1" data-station="${st}" data-type="${type}" ${i === 0 ? 'disabled' : ''} aria-label="Выше">${ic('chevUp', 16)}</button>
+                     <button class="icon-btn sm" data-move-item="${it.id}" data-dir="1" data-station="${st}" data-type="${type}" ${i === items.length - 1 ? 'disabled' : ''} aria-label="Ниже">${ic('chevDown', 16)}</button>
+                   </span>
+                   <button class="icon-btn sm danger" data-del-item="${it.id}" data-station="${st}" data-type="${type}" aria-label="Удалить">${ic('x', 16)}</button>`
                 : `<button class="check-row" data-check="${it.id}" data-station="${st}" data-type="${type}">
                     <span class="box">${d ? ic('check', 16) : ''}</span>
                     <span class="txt">${esc(it.text)}${d ? `<small>${esc(d.by)} · ${fmtTime(d.at)}</small>` : ''}</span>
                   </button>`}
             </li>`;
-          }).join('') || '<li class="empty">Пунктов пока нет</li>'}
-        </ul>
+          }).join('') || '<li class="empty">Пунктов пока нет — добавьте первый ниже</li>'}
+        </ul>`}
 
         ${editing ? `
           <form class="add-row" data-form="add-item" data-station="${st}" data-type="${type}">
-            <input name="text" placeholder="Новый пункт чек-листа" required/>
-            <button class="btn">Добавить</button>
+            <input name="text" placeholder="Новый пункт: что нужно сделать" required autocomplete="off"/>
+            <button class="btn">${ic('plus', 18)} Добавить</button>
           </form>
-          <button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}">Готово</button>`
+          <p class="muted">Изменения сохраняются сразу. Отметки, уже поставленные сегодня, не сбрасываются.</p>
+          <button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}">${ic('check', 18)} Готово</button>`
           : `${p.pct === 100 && items.length ? `<div class="done-banner">${ic('check', 18)} Чек-лист выполнен полностью</div>` : ''}
-             ${can.editLists() ? `<button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">${ic('edit', 16)} Редактировать пункты</button>` : ''}`}
+             ${can.editLists() && items.length ? `<button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">${ic('edit', 16)} Редактировать пункты</button>` : ''}`}
       </main>${nav()}`;
   }
 
@@ -804,6 +814,7 @@
       const done = getChecks(date, station, t.id);
       (lists[t.id] || []).forEach((i) => { if (!done[i.id]) out.push(`${t.name}: ${i.text}`); });
     }
+    if (!Object.values(lists).some((l) => l.length)) return '<p class="muted">Пункты чек-листа не заданы</p>';
     if (!out.length) return '<p class="ok-t">Всё выполнено</p>';
     return `<details class="missing"><summary>Не выполнено: ${out.length}</summary><ul>${out.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
   }
@@ -943,8 +954,18 @@
     }
     if (d.delItem) {
       const lists = load(KEY.lists, {});
-      const { station, type } = state.params;
-      lists[station][type] = lists[station][type].filter((i) => i.id !== d.delItem);
+      const arr = lists[d.station][d.type];
+      const it = arr.find((i) => i.id === d.delItem);
+      if (!it || !confirm(`Удалить пункт «${it.text}»?`)) return;
+      lists[d.station][d.type] = arr.filter((i) => i.id !== d.delItem);
+      save(KEY.lists, lists); render(); return;
+    }
+    if (d.moveItem) {
+      const lists = load(KEY.lists, {});
+      const arr = lists[d.station][d.type];
+      const i = arr.findIndex((x) => x.id === d.moveItem), j = i + Number(d.dir);
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
       save(KEY.lists, lists); render(); return;
     }
     if (d.delTtk) {
@@ -978,8 +999,7 @@
     const t = e.target;
     if (t.dataset.editItem) {
       const lists = load(KEY.lists, {});
-      const { station, type } = state.params;
-      const it = lists[station][type].find((i) => i.id === t.dataset.editItem);
+      const it = lists[t.dataset.station][t.dataset.type].find((i) => i.id === t.dataset.editItem);
       if (it) { it.text = t.value.trim() || it.text; save(KEY.lists, lists); toast('Сохранено'); }
     }
     if (t.id === 'report-date') go('team', { tab: 'report', date: t.value });

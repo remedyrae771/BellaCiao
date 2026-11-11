@@ -389,3 +389,14 @@ h2.section-title + .ts-table { border: 1px solid var(--line); border-radius: var
   .rc-line { grid-template-columns: 1fr 60px 36px; }
   .segmented button { font-size: 12px; }
 }
+
+/* Пустой чек-лист и редактирование пунктов */
+.empty-list { padding: 28px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--ink-3); }
+.empty-list b { color: var(--ink); font-size: 16px; margin-top: 6px; }
+.empty-list p { margin: 0 0 10px; }
+.checklist li.editing { padding: 6px 8px 6px 12px; gap: 6px; }
+.checklist li.editing .edit-input { margin: 0; min-width: 0; resize: none; line-height: 1.35; font-size: 14px; }
+.checklist .num { width: 22px; text-align: right; color: var(--ink-3); font-weight: 700; font-size: 13px; flex: none; font-variant-numeric: tabular-nums; }
+.checklist .move { display: flex; gap: 2px; }
+.checklist li .icon-btn { margin-right: 0; }
+.icon-btn:disabled { opacity: .3; cursor: default; }
