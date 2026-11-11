@@ -39,7 +39,7 @@
   const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const fmtDate = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const fmtNum = (n) => (Math.round(n * 10) / 10).toLocaleString('ru-RU');
-  const stationById = (id) => STATIONS.find((s) => s.id === id) || { name: id, short: id, icon: '•' };
+  const stationById = (id) => STATIONS.find((s) => s.id === id) || { name: id, short: id, icon: 'clipboard' };
   const groupById = (id) => (id === 'chef' ? CHEF_GROUP : stationById(id));
   const fmtDT = (ts) => new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const fmtDur = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return `${Math.floor(m / 60)} ч ${String(m % 60).padStart(2, '0')} мин`; };
@@ -189,7 +189,7 @@
     const shifts = allShifts();
     shifts.push({ id: 's' + uid(), uid: state.user.id, start: Date.now(), end: null, station: state.user.station });
     save(KEY.shifts, shifts);
-    toast(`Смена начата в ${fmtTime(Date.now())}. Buon lavoro!`);
+    toast(`Смена начата в ${fmtTime(Date.now())}`);
   }
 
   function clockOut() {
@@ -198,7 +198,7 @@
     if (!s) return;
     s.end = Date.now();
     save(KEY.shifts, shifts);
-    toast(`Смена закрыта: ${fmtDur(s.end - s.start)}. Grazie!`);
+    toast(`Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}`);
   }
 
   // Смены, начавшиеся в периоде [from, to] (даты 'YYYY-MM-DD' включительно)
@@ -246,6 +246,45 @@
     return { n, total, pct: total ? Math.round((n / total) * 100) : 0 };
   }
 
+
+  /* ---------------- Иконки (линейные SVG) ---------------- */
+  const ICONS = {
+    home: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
+    checklist: 'M10 6h10M10 12h10M10 18h10M3.5 6l1.5 1.5L8 4.5M3.5 12l1.5 1.5L8 10.5M3.5 18l1.5 1.5L8 16.5',
+    book: 'M3 5h6a3 3 0 0 1 3 3v12a2.5 2.5 0 0 0-2.5-2.5H3zM21 5h-6a3 3 0 0 0-3 3v12a2.5 2.5 0 0 1 2.5-2.5H21z',
+    shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+    users: 'M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+    clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+    chart: 'M4 20V11M10 20V5M16 20v-6M2 20h20',
+    lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+    chevL: 'M15 18l-6-6 6-6', chevR: 'M9 6l6 6-6 6',
+    plus: 'M12 5v14M5 12h14', minus: 'M5 12h14',
+    edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+    download: 'M12 3v12M7 10l5 5 5-5M4 21h16',
+    x: 'M6 6l12 12M18 6 6 18',
+    check: 'M5 12.5l4.5 4.5L19 7.5',
+    logout: 'M15 4h4v16h-4M10 17l5-5-5-5M15 12H3',
+    alert: 'M12 3 2 20h20zM12 10v4M12 17h.01',
+    search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5',
+    snowflake: 'M12 2v20M3.3 7l17.4 10M20.7 7 3.3 17M9 3.5 12 6l3-2.5M9 20.5l3-2.5 3 2.5',
+    pasta: 'M3 11h18a9 9 0 0 1-18 0zM7.5 11c0-3 2-5.5 5-5.5M11.5 11c0-2 1-3.5 3-3.5M16 2l-4.5 9M20 3.5l-5.5 7.5',
+    flame: 'M12 22c4 0 7-2.6 7-7 0-3.2-2-5.6-4-7.6 0 2.6-1.4 4-3 4 0-3-1-6.2-4-9.4 0 4.2-3 6.6-3 11.6C5 18.7 8 22 12 22z',
+    bell: 'M3 18h18M5.5 18a6.5 6.5 0 0 1 13 0M12 11.5V9M10 9h4M2 21h20',
+    pizza: 'M3 7c6-3 12-3 18 0L12 22zM4.6 9.7c4.9-2.1 9.9-2.1 14.8 0M9.5 12h.01M14 11.5h.01M12 16h.01',
+    cake: 'M3 21h18M5 21v-8h14v8M5 16c2.3 1.4 4.7 1.4 7 0s4.7-1.4 7 0M12 13V9M12 6.5V6',
+    chefhat: 'M7 17h10v4H7zM7 17v-4.2A4 4 0 0 1 6.3 5a5.5 5.5 0 0 1 11.4 0A4 4 0 0 1 17 12.8V17',
+    sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1.5v2M12 20.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M1.5 12h2M20.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4',
+    moon: 'M20.5 13.5A8.5 8.5 0 1 1 10.5 3.5a6.8 6.8 0 0 0 10 10z',
+    clipboard: 'M9 3h6v3H9zM7 4.5H5V21h14V4.5h-2M9 11h6M9 15h6M9 19h3',
+    knife: 'M3 21 13.5 10.5M13.5 10.5 20 4c1 3.5 0 6.5-3 8.5l-3.5-2z',
+    extinguisher: 'M8 9h6v12H8zM11 9V6M8 6h6.5l2.5-2M9 6a3 3 0 0 0-4 3v3',
+    bolt: 'M13 2 4 14h7l-1 8 9-12h-7z',
+    drop: 'M12 3s7 7 7 12a7 7 0 0 1-14 0c0-5 7-12 7-12z',
+    firstaid: 'M3 7h18v13H3zM8.5 7V4h7v3M12 10v7M8.5 13.5h7',
+    cog: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1',
+  };
+  const ic = (name, size = 20) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] || ICONS.shield}"/></svg>`;
+
   /* ---------------- Компоненты ---------------- */
   const ring = (pct, size = 56) => {
     const r = size / 2 - 5, c = 2 * Math.PI * r;
@@ -258,8 +297,8 @@
   const header = (title, back) => `
     <div class="topbar-wrap">
       <header class="topbar">
-        ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Назад">‹</button>` : `<div class="brand-mini" aria-label="Bella Ciao">BC</div>`}
-        <h1>${title === 'Bella Ciao' ? '<span class="script">Bella Ciao</span>' : esc(title)}</h1>
+        ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
+        <h1>${title === 'Bella Ciao' ? '' : esc(title)}</h1>
         <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
       </header>
       <div class="ceramic-rule"></div>
@@ -269,14 +308,14 @@
 
   function nav() {
     const items = [
-      ['home', '⌂', 'Главная'],
-      ['checklists', '✓', 'Чек-листы'],
-      ['ttk', '📖', 'ТТК'],
-      ['safety', '⛑', 'ТБ'],
+      ['home', 'home', 'Главная'],
+      ['checklists', 'checklist', 'Чек-листы'],
+      ['ttk', 'book', 'ТТК'],
+      ['safety', 'shield', 'ТБ'],
     ];
-    if (can.report()) items.push(['team', '👥', 'Команда']);
+    if (can.report()) items.push(['team', 'users', 'Команда']);
     return `<nav class="bottom-nav">${items.map(([v, i, l]) =>
-      `<button class="${state.view.startsWith(v) ? 'active' : ''}" data-go="${v}"><span class="ni">${i}</span><span>${l}</span></button>`
+      `<button class="${state.view.startsWith(v) ? 'active' : ''}" data-go="${v}"><span class="ni">${ic(i, 22)}</span><span>${l}</span></button>`
     ).join('')}</nav>`;
   }
 
@@ -310,7 +349,7 @@
       <main class="login">
         <div class="login-card pick">
           <div class="pick-head">
-            <span class="st-icon">${g.icon}</span>
+            <span class="st-icon">${ic(g.icon, 22)}</span>
             <div><div class="eyebrow">${esc(g.name)}</div><h2>Кто вы?</h2></div>
           </div>
           <div class="pick-list">
@@ -320,11 +359,11 @@
                 <span class="avatar lg">${esc(initials(u.name))}</span>
                 <span class="pick-body"><b>${esc(u.name)}</b>
                   <small>${ROLES[u.role].name}${open ? ` · <span class="on-shift">на смене с ${fmtTime(open.start)}</span>` : ''}</small></span>
-                <span class="chev">›</span>
+                <span class="chev">${ic('chevR', 18)}</span>
               </button>`;
             }).join('') || '<p class="empty">На этой станции пока нет сотрудников. Шеф добавляет их в разделе «Команда».</p>'}
           </div>
-          <button class="btn btn-ghost wide" data-cancel-pick>‹ Другой код</button>
+          <button class="btn btn-ghost wide" data-cancel-pick>Ввести другой код</button>
         </div>
       </main>`;
   }
@@ -342,16 +381,16 @@
               <div class="logo-script">Bella Ciao</div>
               <div class="logo-sub">Trattoria Italiana</div>
             </div>
-            <div class="logo-tag">CUCINA · ALMATY</div>
+            <div class="logo-tag">Кухня · Алматы</div>
           </div>
           <p class="login-hint">${locked ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
           <div class="pin-dots">${dots}</div>
           <div class="keypad">
             ${keys.map((k) => k === ''
               ? '<span></span>'
-              : `<button class="key${k === '⌫' ? ' key-del' : ''}" data-key="${k}" ${locked ? 'disabled' : ''}>${k}</button>`).join('')}
+              : `<button class="key${k === '⌫' ? ' key-del' : ''}" data-key="${k}" ${locked ? 'disabled' : ''} ${k === '⌫' ? 'aria-label="Стереть"' : ''}>${k === '⌫' ? ic('chevL', 24) : k}</button>`).join('')}
           </div>
-          <p class="login-foot">Кухня · Чек-листы · ТТК · Техника безопасности</p>
+          <p class="login-foot">Служебное приложение для сотрудников кухни</p>
         </div>
       </main>`;
   }
@@ -359,7 +398,7 @@
   function viewHome() {
     const u = state.user;
     const hour = new Date().getHours();
-    const greet = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
+    const greet = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
     const myStations = visibleStations();
     const acks = load(KEY.acks, {})[u.id] || {};
     const mySafety = load(KEY.safety, []).filter((s) => !s.stations.length || s.stations.includes(u.station) || can.allStations());
@@ -368,15 +407,15 @@
     return `${header('Bella Ciao')}
       <main class="page">
         <section class="hero">
-          <div class="hero-greet">${greet},</div>
+          <div class="hero-greet">${greet}</div>
           <div class="hero-name">${esc(u.name)}</div>
           <div class="hero-meta">${ROLES[u.role].name} · ${esc(stationById(u.station).name)} · ${fmtDate(Date.now())}</div>
         </section>
 
         ${shiftCard()}
         ${can.manageTeam() && Object.values(load(KEY.codes, {})).some((c) => c.isDefault)
-          ? `<div class="alert" data-go="team" data-tab="codes">🔐 Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</div>` : ''}
-        ${unread ? `<div class="alert alert-olive" data-go="safety">⛑ Не прочитано разделов ТБ: <b>${unread}</b>. Ознакомьтесь и подтвердите.</div>` : ''}
+          ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
+        ${unread ? `<div class="alert alert-olive" data-go="safety">${ic('shield', 18)}<span>Не прочитано разделов ТБ: <b>${unread}</b>. Ознакомьтесь и подтвердите.</span></div>` : ''}
 
         ${can.report() ? (() => {
           const staff = load(KEY.staff, []);
@@ -392,7 +431,7 @@
           ${myStations.map((s) => {
             const p = stationProgress(s.id);
             return `<button class="card station-card" data-go="checklists" data-station="${s.id}">
-              <span class="st-icon">${s.icon}</span>
+              <span class="st-icon">${ic(s.icon, 22)}</span>
               <span class="st-body"><b>${esc(s.name)}</b><small>${p.n} из ${p.total} пунктов</small></span>
               ${ring(p.pct)}
             </button>`;
@@ -401,9 +440,9 @@
 
         <h2 class="section-title">Быстрый доступ</h2>
         <div class="quick">
-          <button class="card quick-card" data-go="ttk"><span>📖</span><b>ТТК</b><small>Технологические карты</small></button>
-          <button class="card quick-card" data-go="safety"><span>⛑</span><b>Техника безопасности</b><small>Правила и инструкции</small></button>
-          ${can.report() ? `<button class="card quick-card" data-go="team"><span>📊</span><b>Табель</b><small>Часы и оплата</small></button>` : ''}
+          <button class="card quick-card" data-go="ttk"><span class="q-ic">${ic('book', 22)}</span><b>ТТК</b><small>Технологические карты</small></button>
+          <button class="card quick-card" data-go="safety"><span class="q-ic">${ic('shield', 22)}</span><b>Техника безопасности</b><small>Правила и инструкции</small></button>
+          ${can.report() ? `<button class="card quick-card" data-go="team"><span class="q-ic">${ic('clock', 22)}</span><b>Табель</b><small>Часы и оплата</small></button>` : ''}
         </div>
       </main>${nav()}`;
   }
@@ -421,12 +460,12 @@
     return `${header('Чек-листы')}
       <main class="page">
         ${stations.length > 1 ? `<div class="chips">${stations.map((s) =>
-          `<button class="chip ${s.id === st ? 'on' : ''}" data-go="checklists" data-station="${s.id}" data-type="${type}">${s.icon} ${esc(s.short)}</button>`).join('')}</div>` : ''}
+          `<button class="chip ${s.id === st ? 'on' : ''}" data-go="checklists" data-station="${s.id}" data-type="${type}">${ic(s.icon, 16)} ${esc(s.short)}</button>`).join('')}</div>` : ''}
 
         <div class="segmented">${CHECKLIST_TYPES.map((t) => {
           const tp = progress(st, t.id);
           return `<button class="${t.id === type ? 'on' : ''}" data-go="checklists" data-station="${st}" data-type="${t.id}">
-            ${t.icon} ${t.name}<small>${tp.n}/${tp.total}</small></button>`;
+            <span class="seg-t">${ic(t.icon, 16)} ${t.name}</span><small>${tp.n}/${tp.total}</small></button>`;
         }).join('')}</div>
 
         <div class="list-head">
@@ -444,9 +483,9 @@
             return `<li class="${d ? 'done' : ''}">
               ${editing
                 ? `<input class="edit-input" data-edit-item="${it.id}" value="${esc(it.text)}"/>
-                   <button class="icon-btn danger" data-del-item="${it.id}" aria-label="Удалить">✕</button>`
+                   <button class="icon-btn danger" data-del-item="${it.id}" aria-label="Удалить">${ic('x', 18)}</button>`
                 : `<button class="check-row" data-check="${it.id}" data-station="${st}" data-type="${type}">
-                    <span class="box">${d ? '✓' : ''}</span>
+                    <span class="box">${d ? ic('check', 16) : ''}</span>
                     <span class="txt">${esc(it.text)}${d ? `<small>${esc(d.by)} · ${fmtTime(d.at)}</small>` : ''}</span>
                   </button>`}
             </li>`;
@@ -459,8 +498,8 @@
             <button class="btn">Добавить</button>
           </form>
           <button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}">Готово</button>`
-          : `${p.pct === 100 && items.length ? '<div class="done-banner">Perfetto! Чек-лист выполнен</div>' : ''}
-             ${can.editLists() ? `<button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">✎ Редактировать пункты</button>` : ''}`}
+          : `${p.pct === 100 && items.length ? `<div class="done-banner">${ic('check', 18)} Чек-лист выполнен полностью</div>` : ''}
+             ${can.editLists() ? `<button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">${ic('edit', 16)} Редактировать пункты</button>` : ''}`}
       </main>${nav()}`;
   }
 
@@ -479,20 +518,20 @@
         </div>
         <div class="chips">
           <button class="chip ${!st ? 'on' : ''}" data-go="ttk" data-station="">Все</button>
-          ${STATIONS.map((s) => `<button class="chip ${s.id === st ? 'on' : ''}" data-go="ttk" data-station="${s.id}">${s.icon} ${esc(s.short)}</button>`).join('')}
+          ${STATIONS.map((s) => `<button class="chip ${s.id === st ? 'on' : ''}" data-go="ttk" data-station="${s.id}">${ic(s.icon, 16)} ${esc(s.short)}</button>`).join('')}
         </div>
         <div class="ttk-list">
           ${list.map((t) => `
             <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-              <span class="ttk-st">${stationById(t.station).icon}</span>
+              <span class="ttk-st">${ic(stationById(t.station).icon, 22)}</span>
               <span class="ttk-body">
                 <b>${esc(t.name)}</b>
                 <small>${esc(stationById(t.station).short)} · выход ${t.yield ? t.yield + ' г' : '—'} · ${esc(t.time)}</small>
               </span>
-              <span class="chev">›</span>
+              <span class="chev">${ic('chevR', 18)}</span>
             </button>`).join('') || '<p class="empty">Ничего не найдено</p>'}
         </div>
-        ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">＋</button>` : ''}
+        ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">${ic('plus', 26)}</button>` : ''}
       </main>${nav()}`;
   }
 
@@ -505,7 +544,7 @@
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
-        <div class="eyebrow">${stationById(t.station).icon} ${esc(stationById(t.station).name)}</div>
+        <div class="eyebrow">${esc(stationById(t.station).name)}</div>
         <h2 class="dish">${esc(t.name)}</h2>
         <div class="meta-row">
           <span>Выход: <b>${t.yield ? fmtNum(t.yield * k) + ' г' : '—'}</b></span>
@@ -514,9 +553,9 @@
 
         <div class="scaler">
           <span>Порций:</span>
-          <button class="icon-btn" data-scale="-1">−</button>
+          <button class="icon-btn" data-scale="-1">${ic('minus', 18)}</button>
           <b>${k}</b>
-          <button class="icon-btn" data-scale="1">+</button>
+          <button class="icon-btn" data-scale="1">${ic('plus', 18)}</button>
           ${[5, 10, 20].map((n) => `<button class="chip ${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}
         </div>
 
@@ -537,7 +576,7 @@
         </div>
 
         ${can.editTtk() ? `<div class="row-btns">
-          <button class="btn" data-go="ttk-edit" data-id="${t.id}">✎ Редактировать</button>
+          <button class="btn" data-go="ttk-edit" data-id="${t.id}">${ic('edit', 16)} Редактировать</button>
           <button class="btn btn-ghost danger" data-del-ttk="${t.id}">Удалить</button>
         </div>` : ''}
       </main>${nav()}`;
@@ -586,9 +625,9 @@
             const scope = s.stations.length ? s.stations.map((x) => stationById(x).short).join(', ') : 'Для всех';
             return `<section class="acc-item ${open === s.id ? 'open' : ''}">
               <button class="acc-head" data-go="safety" data-open="${open === s.id ? '' : s.id}">
-                <span class="acc-ic">${s.icon}</span>
+                <span class="acc-ic">${ic(s.icon, 22)}</span>
                 <span class="acc-t"><b>${esc(s.title)}</b><small>${esc(scope)}</small></span>
-                <span class="pill ${a ? 'ok' : ''}">${a ? '✓ Ознакомлен' : 'Не прочитано'}</span>
+                <span class="pill ${a ? 'ok' : ''}">${a ? 'Ознакомлен' : 'Не прочитано'}</span>
               </button>
               ${open === s.id ? `<div class="acc-body">
                 <ul class="rules">${s.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
@@ -625,10 +664,10 @@
         ${STATIONS.map((s) => {
           const sp = stationProgress(s.id, date);
           return `<div class="card report-card">
-            <div class="rc-head"><span>${s.icon} <b>${esc(s.name)}</b></span>${ring(sp.pct, 48)}</div>
+            <div class="rc-head"><span class="rc-t">${ic(s.icon, 18)} <b>${esc(s.name)}</b></span>${ring(sp.pct, 48)}</div>
             ${CHECKLIST_TYPES.map((t) => {
               const p = progress(s.id, t.id, date);
-              return `<div class="rc-line"><span>${t.icon} ${t.name}</span>
+              return `<div class="rc-line"><span>${t.name}</span>
                 <div class="bar sm"><span style="width:${p.pct}%"></span></div><small>${p.n}/${p.total}</small></div>`;
             }).join('')}
             ${missing(s.id, date)}
@@ -648,14 +687,14 @@
               <small>${ROLES[u.role].name} · ${esc(u.role === 'chef' ? 'вход по коду шефа' : stationById(u.station).name)}</small>
               <small>ТБ: ${ackN}/${relevant.length}${can.manageTeam() && u.rate ? ` · ${money(u.rate)}/ч` : ''}${u.disabled ? ' · отключён' : ''}</small>
             </div>
-            ${can.manageTeam() ? `<button class="icon-btn" data-go="member" data-id="${u.id}" aria-label="Изменить">✎</button>` : ''}
+            ${can.manageTeam() ? `<button class="icon-btn" data-go="member" data-id="${u.id}" aria-label="Изменить">${ic('edit', 18)}</button>` : ''}
           </div>`;
         }).join('')}
       </div>
-      ${can.manageTeam() ? `<button class="fab" data-go="member" aria-label="Добавить сотрудника">＋</button>` : ''}`;
+      ${can.manageTeam() ? `<button class="fab" data-go="member" aria-label="Добавить сотрудника">${ic('plus', 26)}</button>` : ''}`;
 
-    const tabs = [['hours', '⏱ Табель'], ['report', '📊 Чек-листы'], ['staff', '👥 Люди']];
-    if (can.manageTeam()) tabs.push(['codes', '🔐 Коды']);
+    const tabs = [['hours', 'Табель'], ['report', 'Чек-листы'], ['staff', 'Сотрудники']];
+    if (can.manageTeam()) tabs.push(['codes', 'Коды']);
     const body = { hours: timesheet, report: () => report, staff: () => team, codes: codesTab }[tab] || timesheet;
 
     return `${header('Команда')}
@@ -724,16 +763,16 @@
               <tbody>${r.list.map((s) => `<tr class="${!s.end ? 'open-row' : ''}">
                 <td>${fmtDT(s.start)}</td>
                 <td>${s.end ? fmtDT(s.end) : '<span class="on-shift">на смене</span>'}</td>
-                <td>${fmtNum(hours(shiftMs(s)))}${s.edited ? ' <span title="Исправлено шефом">✎</span>' : ''}</td>
-                ${showMoney ? `<td><button class="icon-btn sm" data-go="shift-edit" data-id="${s.id}" aria-label="Исправить">✎</button></td>` : ''}
+                <td>${fmtNum(hours(shiftMs(s)))}${s.edited ? ' <span class="edited" title="Исправлено шефом">испр.</span>' : ''}</td>
+                ${showMoney ? `<td><button class="icon-btn sm" data-go="shift-edit" data-id="${s.id}" aria-label="Исправить">${ic('edit', 15)}</button></td>` : ''}
               </tr>`).join('')}</tbody>
             </table>
           </details>`).join('') || '<p class="empty">За этот период смен нет</p>'}
       </div>
 
       <div class="row-btns">
-        <button class="btn btn-ghost" data-export="${from}|${to}">⬇ Скачать табель (CSV)</button>
-        ${showMoney ? `<button class="btn" data-go="shift-edit">＋ Добавить смену</button>` : ''}
+        <button class="btn btn-ghost" data-export="${from}|${to}">${ic('download', 18)} Скачать табель (CSV)</button>
+        ${showMoney ? `<button class="btn" data-go="shift-edit">${ic('plus', 18)} Добавить смену</button>` : ''}
       </div>`;
   }
 
@@ -747,7 +786,7 @@
       <div class="codes">
         ${groups.map((g) => `
           <form class="card code-row" data-form="code" data-group="${g.id}">
-            <span class="st-icon">${g.icon}</span>
+            <span class="st-icon">${ic(g.icon, 22)}</span>
             <span class="m-body"><b>${esc(g.name)}</b>
               <small>${codes[g.id]?.isDefault ? '<span class="warn-t">стандартный код — смените</span>' : 'код установлен'} · ${groupMembers(g.id).length} чел.</small></span>
             <span class="code-in">
@@ -763,9 +802,9 @@
     const out = [];
     for (const t of CHECKLIST_TYPES) {
       const done = getChecks(date, station, t.id);
-      (lists[t.id] || []).forEach((i) => { if (!done[i.id]) out.push(`${t.icon} ${i.text}`); });
+      (lists[t.id] || []).forEach((i) => { if (!done[i.id]) out.push(`${t.name}: ${i.text}`); });
     }
-    if (!out.length) return '<p class="ok-t">Всё выполнено ✓</p>';
+    if (!out.length) return '<p class="ok-t">Всё выполнено</p>';
     return `<details class="missing"><summary>Не выполнено: ${out.length}</summary><ul>${out.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
   }
 
@@ -830,7 +869,7 @@
           <tbody>${mine.map((s) => `<tr><td>${fmtDT(s.start)}</td><td>${s.end ? fmtDT(s.end) : '<span class="on-shift">на смене</span>'}</td><td>${fmtNum(hours(shiftMs(s)))}</td></tr>`).join('')}</tbody>
         </table>` : '<p class="empty">В этом месяце смен пока нет</p>'}
         <p class="muted">Ошиблись с отметкой? Скажите су-шефу или шефу — он исправит время в табеле.</p>
-        <button class="btn btn-dark wide" data-logout>Выйти</button>
+        <button class="btn btn-dark wide" data-logout>${ic('logout', 18)} Выйти</button>
       </main>${nav()}`;
   }
 
@@ -899,7 +938,7 @@
       const acks = load(KEY.acks, {});
       acks[state.user.id] = { ...(acks[state.user.id] || {}), [d.ack]: Date.now() };
       save(KEY.acks, acks);
-      toast('Подтверждено. Grazie!');
+      toast('Ознакомление подтверждено');
       state.params.open = ''; render(); return;
     }
     if (d.delItem) {
