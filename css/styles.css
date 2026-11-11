@@ -423,3 +423,12 @@ h2.section-title + .ts-table { border: 1px solid var(--line); border-radius: var
 .modal-btns .btn { flex: 1; }
 .btn-danger { background: var(--danger); }
 .btn-danger:hover { background: #8f1e18; }
+
+/* Редактирование чек-листа станции */
+.edit-banner { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; margin-bottom: 10px; border-radius: var(--radius);
+  background: var(--cobalt-l); color: var(--navy); border: 1px solid #cfdcef; font-size: 14px; }
+.edit-banner .ic { margin-top: 1px; }
+.copy-row { margin: 14px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.copy-row label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.copy-in { display: flex; gap: 8px; flex-wrap: wrap; }
+.copy-in select { flex: 1 1 200px; min-width: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }

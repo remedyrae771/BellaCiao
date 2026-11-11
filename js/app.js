@@ -561,6 +561,7 @@
           ${ring(p.pct, 64)}
         </div>
 
+        ${editing ? `<div class="edit-banner">${ic('edit', 18)}<span>Пункты для станции <b>${esc(stationById(st).name)}</b> · ${CHECKLIST_TYPES.find((t) => t.id === type).name}. Их увидят только повара этой станции.</span></div>` : ''}
         ${!items.length && !editing ? `
           <div class="card empty-list">
             ${ic('checklist', 32)}
@@ -593,7 +594,18 @@
             <input name="text" placeholder="Новый пункт: что нужно сделать" required autocomplete="off"/>
             <button class="btn">${ic('plus', 18)} Добавить</button>
           </form>
-          <p class="muted">Изменения сохраняются сразу. Отметки, уже поставленные сегодня, не сбрасываются.</p>
+          ${(() => {
+            const lists = load(KEY.lists, {});
+            const sources = STATIONS.filter((x) => x.id !== st && ((lists[x.id] || {})[type] || []).length);
+            return sources.length ? `<form class="copy-row" data-form="copy-items" data-station="${st}" data-type="${type}">
+              <label for="copy-from">Скопировать пункты «${CHECKLIST_TYPES.find((t) => t.id === type).name.toLowerCase()}» из другой станции</label>
+              <div class="copy-in">
+                <select id="copy-from" name="from">${sources.map((x) => `<option value="${x.id}">${esc(x.name)} · ${lists[x.id][type].length} п.</option>`).join('')}</select>
+                <button class="btn btn-ghost">${ic('plus', 16)} Добавить к списку</button>
+              </div>
+            </form>` : '';
+          })()}
+          <p class="muted">Изменения сохраняются сразу и видны всем. Отметки, уже поставленные сегодня, не сбрасываются.</p>
           <button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}">${ic('check', 18)} Готово</button>`
           : `${p.pct === 100 && items.length ? `<div class="done-banner">${ic('check', 18)} Чек-лист выполнен полностью</div>` : ''}
              ${can.editLists() && items.length ? `<button class="btn btn-ghost wide" data-go="checklists" data-station="${st}" data-type="${type}" data-edit="1">${ic('edit', 16)} Редактировать пункты</button>` : ''}`}
@@ -1163,6 +1175,17 @@
     const f = e.target;
     const fd = Object.fromEntries(new FormData(f));
     const type = f.dataset.form;
+
+    if (type === 'copy-items') {
+      const lists = load(KEY.lists, {});
+      const target = lists[f.dataset.station][f.dataset.type];
+      const have = new Set(target.map((i) => i.text.trim().toLowerCase()));
+      const add = ((lists[fd.from] || {})[f.dataset.type] || []).filter((i) => !have.has(i.text.trim().toLowerCase()));
+      add.forEach((i) => target.push({ id: uid(), text: i.text }));
+      save(KEY.lists, lists);
+      toast(add.length ? `Добавлено пунктов: ${add.length}` : 'Все эти пункты уже есть в списке');
+      render(); return;
+    }
 
     if (type === 'add-item') {
       const lists = load(KEY.lists, {});
