@@ -90,6 +90,8 @@
     // старые данные с личными кодами больше не нужны
     ['bc_staff_v1', 'bc_checklists_v1'].forEach((k) => localStorage.removeItem(k));
     if (!load(KEY.ttk)) save(KEY.ttk, DEFAULT_TTK);
+    // Удаляем примерные ТТК — ресторан загружает свои карты
+    if ((load('bc_seed', 0) || 0) < 3) { save(KEY.ttk, []); save('bc_seed', 3); }
     if (!load(KEY.safety)) save(KEY.safety, DEFAULT_SAFETY);
     if (!load(KEY.lists)) {
       const lists = {};
@@ -550,7 +552,9 @@
                 <small>${esc(stationById(t.station).short)} · выход ${t.yield ? t.yield + ' г' : '—'} · ${esc(t.time)}</small>
               </span>
               <span class="chev">${ic('chevR', 18)}</span>
-            </button>`).join('') || '<p class="empty">Ничего не найдено</p>'}
+            </button>`).join('') || (all.length ? '<p class="empty">Ничего не найдено</p>'
+              : `<div class="card empty-list">${ic('book', 32)}<b>Технологических карт пока нет</b>
+                  <p class="muted">${can.editTtk() ? 'Добавьте первую карту кнопкой «+».' : 'Карты добавляет шеф-повар или су-шеф.'}</p></div>`)}
         </div>
         ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">${ic('plus', 26)}</button>` : ''}
       </main>${nav()}`;
