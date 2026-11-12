@@ -59,6 +59,12 @@
   const stationById = (id) => STATIONS.find((s) => s.id === id) || { name: id, short: id, icon: 'clipboard' };
   const groupById = (id) => (id === 'chef' ? CHEF_GROUP : stationById(id));
   const fmtDT = (ts) => new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  // Таймер смены: 1:05:09 (часы без ведущего нуля, минуты и секунды двумя цифрами)
+  const fmtClock = (ms, withSec = true) => {
+    const t = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    return `${h}:${String(m).padStart(2, '0')}` + (withSec ? `:${String(sec).padStart(2, '0')}` : '');
+  };
   const fmtDur = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return `${Math.floor(m / 60)} ч ${String(m % 60).padStart(2, '0')} мин`; };
   const hours = (ms) => Math.round((ms / 3600000) * 100) / 100;
   const money = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₸';
@@ -465,6 +471,11 @@
       <header class="topbar">
         ${back ? `<button class="icon-btn" data-back="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
         <h1>${title === 'Bella Ciao' ? '' : esc(title)}</h1>
+        ${(() => {
+          const open = openShift(state.user.id);
+          return open ? `<button class="shift-pill" data-go="home" aria-label="Вы на смене. Открыть главную">
+            <i></i><span role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</span></button>` : '';
+        })()}
         <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
       </header>
       <div class="ceramic-rule"></div>
@@ -495,8 +506,8 @@
       <div class="shift-info">
         <div class="eyebrow">${open ? 'Вы на смене' : 'Смена не начата'}</div>
         ${open
-          ? `<div class="shift-timer" data-since="${open.start}">${fmtDur(Date.now() - open.start)}</div>
-             <small>Начало: ${fmtTime(open.start)} · ${fmtDate(open.start)}</small>`
+          ? `<div class="shift-timer" role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</div>
+             <small>Начало в ${fmtTime(open.start)} · ${fmtDate(open.start)}</small>`
           : `<div class="shift-timer is-off">Не на смене</div><small>Отметьте приход, когда начинаете работу</small>`}
         <small class="shift-month">За этот месяц: <b>${fmtNum(hours(monthMs))} ч</b></small>
       </div>
@@ -974,7 +985,7 @@
         <div class="eyebrow">Сейчас на смене · ${onShift.length}</div>
         ${onShift.length ? `<ul class="now-list">${onShift.map((s) => `<li>
             <span class="dot-live"></span><b>${esc(nameOf(s.uid))}</b>
-            <small>${esc(stationById(s.station).short)} · с ${fmtTime(s.start)} · ${fmtDur(Date.now() - s.start)}</small>
+            <small>${esc(stationById(s.station).short)} · с ${fmtTime(s.start)} · <span data-since="${s.start}" data-fmt="short">${fmtClock(Date.now() - s.start, false)}</span></small>
             ${Date.now() - s.start > LONG_SHIFT_MS ? '<span class="pill">забыл отметить уход?</span>' : ''}
           </li>`).join('')}</ul>` : '<p class="muted">Никого нет на смене</p>'}
       </div>
@@ -1217,9 +1228,21 @@
   }
 
   // Живой таймер смены
-  setInterval(() => {
-    document.querySelectorAll('.shift-timer[data-since]').forEach((el) => { el.textContent = fmtDur(Date.now() - Number(el.dataset.since)); });
-  }, 30000);
+  // Тикает каждую секунду, ровно на границе секунды; меняется только текст таймеров, экран не перерисовывается
+  function tickTimers() {
+    const now = Date.now();
+    document.querySelectorAll('[data-since]').forEach((el) => {
+      const txt = fmtClock(now - Number(el.dataset.since), el.dataset.fmt !== 'short');
+      if (el.textContent !== txt) el.textContent = txt;
+    });
+  }
+  // Следующий тик — ровно когда у таймера сменится секунда (отсчёт от начала смены, без отставания)
+  (function loop() {
+    const el = document.querySelector('[data-since]');
+    const delay = el ? 1000 - ((Date.now() - Number(el.dataset.since)) % 1000) + 5 : 1000;
+    setTimeout(() => { if (document.visibilityState === 'visible') tickTimers(); loop(); }, delay);
+  })();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tickTimers(); });
 
   /* ---------------- События ---------------- */
   document.addEventListener('click', async (e) => {

@@ -671,3 +671,20 @@ main { will-change: auto; backface-visibility: hidden; }
 }
 /* Карточки за пределами экрана не раскладываются заранее — длинные списки листаются легко */
 .ttk-card, .member, .ts-row, .report-card, .acc-item:not(.open) { content-visibility: auto; contain-intrinsic-size: auto 76px; }
+
+/* ---------- Таймер смены ---------- */
+.shift-timer { font-size: 34px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.shift-card.is-open .shift-timer { color: var(--green); }
+/* Значок «на смене» в шапке */
+.topbar h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shift-pill { display: inline-flex; align-items: center; gap: 7px; flex: none; height: 32px; padding: 0 12px 0 10px; border-radius: 999px;
+  background: rgba(47, 168, 79, .18); color: #d9f5e1; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.shift-pill i { width: 8px; height: 8px; border-radius: 50%; background: #4cd27a; box-shadow: 0 0 0 0 rgba(76, 210, 122, .6); animation: live 2s ease-out infinite; }
+@keyframes live { 0% { box-shadow: 0 0 0 0 rgba(76, 210, 122, .55); } 70% { box-shadow: 0 0 0 7px rgba(76, 210, 122, 0); } 100% { box-shadow: 0 0 0 0 rgba(76, 210, 122, 0); } }
+@media (prefers-reduced-motion: reduce) { .shift-pill i { animation: none; } }
+/* На сенсорных экранах «залипшая» подсветка не перекрашивает кнопки особых цветов */
+@media (hover: none) {
+  .btn-out:hover { background: var(--surface); }
+  .btn-danger:hover { background: var(--danger); }
+  .btn-dark:hover { background: var(--ink); }
+}
