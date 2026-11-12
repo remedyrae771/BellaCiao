@@ -551,3 +551,76 @@ body.is-login {
 .quick-card .q-t { flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .quick-card > .ic { color: var(--ink-3); }
 .storage-link > .ic:first-child { color: var(--tone-sky-fg); }
+
+/* ============================================================
+   Комфорт на телефоне (v3)
+   ============================================================ */
+/* Нажатия срабатывают сразу, без двойного-тапа-зума и выделения текста на кнопках */
+button, a, .key, .chip, .card[data-go], summary { touch-action: manipulation; }
+button, .bottom-nav, .chip, .segmented, .key { -webkit-user-select: none; user-select: none; }
+/* Свайп вниз не перезагружает приложение, прокрутка не «утягивает» страницу */
+html, body { overscroll-behavior-y: none; }
+/* Поля ввода не меньше 16px — iPhone не приближает страницу при касании */
+input, select, textarea { font-size: 16px !important; }
+.code-row input { font-size: 18px !important; }
+/* Чёткая обратная связь на нажатие */
+.card[data-go], .check-row, .pick-row, .acc-head, .ttk-card, .station-card, .quick-card, .storage-link {
+  transition: transform .12s ease, background-color .12s ease, border-color .12s ease;
+}
+.card[data-go]:active, .pick-row:active, .ttk-card:active, .station-card:active, .quick-card:active, .storage-link:active { transform: scale(.985); }
+.check-row:active { background: #f1f4f9; }
+.btn:active { transform: scale(.98); }
+/* Наведение мышью — только там, где есть мышь (на телефоне подсветка не «залипает») */
+@media (hover: none) {
+  .station-card:hover, .ttk-card:hover, .quick-card:hover { border-color: var(--line); }
+  .btn:hover { background: var(--navy); }
+  .btn-ghost:hover { background: var(--surface); }
+  .key:hover, .key-del:hover { background: #f3f2ee; }
+  .key-del:hover { background: transparent; }
+}
+/* Видимый фокус для клавиатуры */
+:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+/* Мягкое появление нового экрана */
+main.enter { animation: page-in .18s ease-out both; }
+@keyframes page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.login-card { animation: page-in .25s ease-out both; }
+.modal { animation: fade-in .15s ease-out both; }
+.modal-box { animation: page-in .18s ease-out both; }
+@keyframes fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  main.enter, .login-card, .modal, .modal-box { animation: none; }
+  .card[data-go]:active, .pick-row:active, .ttk-card:active, .station-card:active, .quick-card:active, .btn:active { transform: none; }
+}
+/* Ленты кнопок прокручиваются плавно и с «прилипанием» */
+.chips { -webkit-overflow-scrolling: touch; }
+/* Длинные слова и названия не вылезают за край */
+.ttk-body b, .st-body b, .pick-body b, .m-body b, .check-row .txt, .dish { overflow-wrap: anywhere; }
+/* Комфортная длина строки в инструкциях и ТТК на планшете */
+.rules, .steps, .lead { max-width: 70ch; }
+/* Цифры в таблицах и таймерах не «прыгают» */
+.ing td, .ts-num, .shift-timer, .ring text, .rc-line small { font-variant-numeric: tabular-nums; }
+/* Период табеля: «С» и «По» ровно в две колонки */
+.date-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.date-row.two label { flex-direction: column; align-items: stretch; gap: 4px; font-size: 13px; }
+.date-row.two input { width: 100%; min-width: 0; padding: 10px 12px; }
+/* Вход: карточка никогда не обрезается — на низких экранах прокручивается и становится компактнее */
+.login { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+.login-card { margin: auto; }
+@media (max-height: 760px) {
+  .login { padding-block: 14px; }
+  .login-card { padding: 20px 20px 14px; }
+  .logo-badge { width: 84px; height: 84px; }
+  .logo-script { font-size: 17px; }
+  .logo-sub { font-size: 4.8px; }
+  .logo-tag { margin-top: 8px; }
+  .login-title { font-size: 20px; margin: 12px 0 2px; }
+  .login-hint { margin-bottom: 12px; font-size: 15px; }
+  .pin-dots { margin-bottom: 14px; }
+  .keypad { gap: 10px; }
+  .key { height: 56px; font-size: 24px; }
+  .login-foot { margin-top: 12px; }
+}
+/* Вкладки в одну строку */
+.segmented button { white-space: nowrap; }
+.segmented .seg-t { white-space: normal; }
+@media (max-width: 400px) { .segmented button { font-size: 13px; padding-inline: 4px; } }

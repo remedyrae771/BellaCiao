@@ -136,10 +136,10 @@
       state.restored = true; restoreSession();
     }
     const a = document.activeElement;
-    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== 'ttk-search';
+    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== 'ttk-search' && a.id !== 'report-date' && a.id !== 'ts-from' && a.id !== 'ts-to';
     const formView = ['ttk-edit', 'member', 'shift-edit'].includes(state.view);
     if (state.user && (typing || formView)) { pendingRender = true; return; }
-    render();
+    scheduleRender();
   }
 
   async function initLocal() {
@@ -241,6 +241,9 @@
       render();
     } else {
       state.failed++;
+      state.loginError = 'Неверный код. Попробуйте ещё раз';
+      clearTimeout(state.loginErrorT);
+      state.loginErrorT = setTimeout(() => { state.loginError = ''; if (!state.user && !state.group) render(); }, 2500);
       state.pin = '';
       if (state.failed >= 5) {
         state.lockedUntil = Date.now() + 30000;
@@ -264,6 +267,7 @@
     if (!user) return;
     state.user = user; state.group = null;
     state.view = 'home'; state.params = {};
+    try { history.replaceState({ bc: true, view: 'home', params: {}, depth: 0 }, ''); navDepth = 0; } catch { /* нет истории */ }
     save(KEY.session, { id: user.id, at: Date.now() });
     resetIdle();
     render();
@@ -299,11 +303,34 @@
   const LONG_SHIFT_MS = 16 * 3600000;
 
   /* ---------------- Навигация ---------------- */
-  function go(view, params = {}) {
+  // Ключ экрана: по нему помним прокрутку и понимаем, тот же ли это экран
+  const viewKeyOf = (view, p = {}) => [view, p.station, p.type, p.id, p.tab, p.cat, p.edit, p.from, p.to, p.date].join('|');
+  const scrollMemory = {};
+  let navDepth = 0;
+
+  // Переход на экран. Кнопка «Назад» телефона возвращает на предыдущий экран, а не закрывает приложение
+  function go(view, params = {}, opts = {}) {
+    scrollMemory[viewKeyOf(state.view, state.params)] = window.scrollY;
     state.view = view; state.params = params; pendingRender = false;
     if (state.user) save(KEY.session, { id: state.user.id, at: Date.now() });
+    if (!opts.fromHistory) {
+      try { history.pushState({ bc: true, view, params, depth: navDepth + 1 }, ''); navDepth++; } catch { /* история недоступна */ }
+    }
     render();
-    window.scrollTo(0, 0);
+    window.scrollTo(0, opts.fromHistory ? (scrollMemory[viewKeyOf(view, params)] || 0) : 0);
+  }
+
+  window.addEventListener('popstate', (e) => {
+    if (!state.user) return;
+    const st = e.state && e.state.bc ? e.state : { view: 'home', params: {}, depth: 0 };
+    navDepth = st.depth || 0;
+    document.querySelector('.modal')?.remove();
+    go(st.view, st.params || {}, { fromHistory: true });
+  });
+
+  // Кнопка «‹» в шапке: назад по истории, если есть куда, иначе на указанный экран
+  function goBack(fallback) {
+    if (navDepth > 0) history.back(); else go(fallback);
   }
 
   /* ---------------- Чек-листы: данные ---------------- */
@@ -404,7 +431,7 @@
   const header = (title, back) => `
     <div class="topbar-wrap">
       <header class="topbar">
-        ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
+        ${back ? `<button class="icon-btn" data-back="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
         <h1>${title === 'Bella Ciao' ? '' : esc(title)}</h1>
         <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
       </header>
@@ -491,7 +518,9 @@
             <div class="logo-tag">Кухня · Алматы</div>
           </div>
           <h1 class="login-title">Вход на кухню</h1>
-          <p class="login-hint ${Sync.status === 'offline' || Date.now() < state.lockedUntil ? 'is-warn' : ''}">${Sync.status === 'loading' ? 'Подключаемся к базе…'
+          <p class="login-hint ${state.loginError || Sync.status === 'offline' || Date.now() < state.lockedUntil ? 'is-warn' : ''}" role="status">${Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.'
+            : state.loginError ? state.loginError
+            : Sync.status === 'loading' ? 'Подключаемся к базе…'
             : Sync.status === 'offline' ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
             : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
           <div class="pin-dots" aria-label="Введено цифр: ${state.pin.length} из 4">${dots}</div>
@@ -876,7 +905,7 @@
       </div>
       ${can.manageTeam() ? `<button class="fab" data-go="member" aria-label="Добавить сотрудника">${ic('plus', 26)}</button>` : ''}`;
 
-    const tabs = [['hours', 'Табель'], ['report', 'Чек-листы'], ['staff', 'Сотрудники']];
+    const tabs = [['hours', 'Табель'], ['report', 'Чек-листы'], ['staff', 'Люди']];
     if (can.manageTeam()) tabs.push(['codes', 'Коды']);
     const body = { hours: timesheet, report: () => report, staff: () => team, codes: codesTab }[tab] || timesheet;
 
@@ -935,7 +964,7 @@
 
       <div class="ts-list">
         ${rows.map((r) => `
-          <details class="card ts-row">
+          <details class="card ts-row" data-k="ts-${r.u.id}">
             <summary>
               <span class="avatar lg ${tone(r.u.role === 'chef' ? 'chef' : r.u.station)}">${esc(initials(r.u.name))}</span>
               <span class="m-body"><b>${esc(r.u.name)}</b><small>${ROLES[r.u.role].name} · смен: ${r.list.length}${showMoney ? ` · ${money(r.u.rate || 0)}/ч` : ''}</small></span>
@@ -989,7 +1018,7 @@
     }
     if (!Object.values(lists).some((l) => l.length)) return '<p class="muted">Пункты чек-листа не заданы</p>';
     if (!out.length) return '<p class="ok-t">Всё выполнено</p>';
-    return `<details class="missing"><summary>Не выполнено: ${out.length}</summary><ul>${out.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
+    return `<details class="missing" data-k="miss-${station}"><summary>Не выполнено: ${out.length}</summary><ul>${out.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
   }
 
   function viewMember() {
@@ -1064,15 +1093,56 @@
     'shift-edit': viewShiftEdit, 'ttk-storage': viewTtkStorage,
   };
 
+  // Перерисовка не чаще раза за кадр (несколько обновлений из базы подряд → одна перерисовка)
+  let renderQueued = false;
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; render(); });
+  }
+
+  let lastViewKey = null;
   function render() {
     const app = $('#app');
-    if (!state.user) { app.innerHTML = viewLogin(); document.body.className = 'is-login'; return; }
+    if (!state.user) {
+      app.innerHTML = viewLogin(); document.body.className = 'is-login'; lastViewKey = 'login'; return;
+    }
     document.body.className = '';
     // защита маршрутов
     if ((state.view === 'team' && !can.report()) || (state.view === 'member' && !can.manageTeam())
       || (state.view === 'shift-edit' && !can.manageTeam())
       || (state.view === 'ttk-edit' && !can.editTtk())) state.view = 'home';
+
+    // Тот же экран (обновились данные) — сохраняем прокрутку, фокус, раскрытые блоки и ленты кнопок
+    const key = viewKeyOf(state.view, state.params);
+    const same = key === lastViewKey;
+    const y = window.scrollY;
+    const a = document.activeElement;
+    const focus = same && a && a.id && app.contains(a)
+      ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
+    const open = same ? [...app.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k) : [];
+    const strips = same ? [...app.querySelectorAll('.chips')].map((c) => c.scrollLeft) : [];
+
     app.innerHTML = (VIEWS[state.view] || viewHome)();
+    lastViewKey = key;
+
+    if (same) {
+      window.scrollTo(0, y);
+      open.forEach((k) => { const d = app.querySelector(`details[data-k="${k}"]`); if (d) d.open = true; });
+      app.querySelectorAll('.chips').forEach((c, i) => { if (strips[i]) c.scrollLeft = strips[i]; });
+      if (focus) {
+        const el = document.getElementById(focus.id);
+        if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(focus.start, focus.end); } catch { /* не текстовое поле */ } }
+      }
+    } else {
+      // Новый экран: мягкое появление и выбранная кнопка в ленте видна
+      app.querySelector('main')?.classList.add('enter');
+      app.querySelectorAll('.chips .chip.on').forEach((c) => {
+        const strip = c.parentElement;
+        const hidden = c.offsetLeft + c.offsetWidth > strip.clientWidth - 8;
+        if (hidden) strip.scrollLeft = c.offsetLeft - (strip.clientWidth - c.offsetWidth) / 2;
+      });
+    }
   }
 
   // Живой таймер смены
@@ -1152,6 +1222,7 @@
       toast('Сотрудник удалён'); go('team', { tab: 'staff' }); return;
     }
     if (el.hasAttribute('data-logout')) { logout(); return; }
+    if (d.back) { goBack(d.back); return; }
 
     if (d.go) {
       const p = {};
@@ -1186,9 +1257,7 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'ttk-search') {
       state.params.q = e.target.value;
-      const pos = e.target.selectionStart;
       render();
-      const inp = $('#ttk-search'); inp.focus(); inp.setSelectionRange(pos, pos);
     }
   });
 

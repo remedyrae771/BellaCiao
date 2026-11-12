@@ -7,9 +7,10 @@ const FirebaseDB = (() => {
   'use strict';
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 
+  // Скрипты качаются параллельно, а выполняются по порядку (async = false)
   const loadScript = (src) => new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('Не загрузился ' + src));
+    s.src = src; s.async = false; s.onload = resolve; s.onerror = () => reject(new Error('Не загрузился ' + src));
     document.head.appendChild(s);
   });
 
@@ -44,12 +45,15 @@ const FirebaseDB = (() => {
   }
 
   async function connect(config) {
-    for (const f of ['firebase-app-compat.js', 'firebase-auth-compat.js', 'firebase-firestore-compat.js']) await loadScript(SDK + f);
+    await Promise.all(['firebase-app-compat.js', 'firebase-auth-compat.js', 'firebase-firestore-compat.js'].map((f) => loadScript(SDK + f)));
     const app = window.firebase.initializeApp(config);
     const fs = app.firestore();
     // Работа без интернета: изменения сохранятся и уйдут, когда связь вернётся
     try { await fs.enablePersistence({ synchronizeTabs: true }); } catch { /* приватный режим или другая вкладка */ }
-    await app.auth().signInAnonymously();
+    // Если вход уже был (сохранён на устройстве) — не ждём сеть
+    const auth = app.auth();
+    await new Promise((resolve) => { const off = auth.onAuthStateChanged(() => { off(); resolve(); }); });
+    if (!auth.currentUser) await auth.signInAnonymously();
     return wrap(fs);
   }
 
