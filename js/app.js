@@ -230,6 +230,16 @@
     render();
   }
 
+  // Точки кода обновляются на месте — экран не перерисовывается и не моргает
+  function updatePinDots() {
+    const dots = document.querySelectorAll('.pin-dots i');
+    if (!dots.length) { render(); return; }
+    dots.forEach((dot, i) => dot.classList.toggle('on', i < state.pin.length));
+    document.querySelector('.pin-dots')?.classList.remove('shake');
+    const box = document.querySelector('.pin-dots');
+    if (box) box.setAttribute('aria-label', `Введено цифр: ${state.pin.length} из 4`);
+  }
+
   async function tryLogin() {
     if (Date.now() < state.lockedUntil) return;
     const pin = state.pin;
@@ -1105,7 +1115,10 @@
   function render() {
     const app = $('#app');
     if (!state.user) {
-      app.innerHTML = viewLogin(); document.body.className = 'is-login'; lastViewKey = 'login'; return;
+      const firstShow = lastViewKey !== 'login' + (state.group || '');
+      app.innerHTML = viewLogin(); document.body.className = 'is-login';
+      if (firstShow) app.querySelector('.login-card')?.classList.add('enter');
+      lastViewKey = 'login' + (state.group || ''); return;
     }
     document.body.className = '';
     // защита маршрутов
@@ -1159,7 +1172,7 @@
     if (d.key !== undefined) {
       if (d.key === '⌫') state.pin = state.pin.slice(0, -1);
       else if (state.pin.length < 4) state.pin += d.key;
-      render();
+      updatePinDots();
       if (state.pin.length === 4) setTimeout(tryLogin, 120);
       return;
     }

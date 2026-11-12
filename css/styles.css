@@ -583,12 +583,12 @@ input, select, textarea { font-size: 16px !important; }
 /* Мягкое появление нового экрана */
 main.enter { animation: page-in .18s ease-out both; }
 @keyframes page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.login-card { animation: page-in .25s ease-out both; }
+.login-card.enter { animation: page-in .25s ease-out both; }
 .modal { animation: fade-in .15s ease-out both; }
 .modal-box { animation: page-in .18s ease-out both; }
 @keyframes fade-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  main.enter, .login-card, .modal, .modal-box { animation: none; }
+  main.enter, .login-card.enter, .modal, .modal-box { animation: none; }
   .card[data-go]:active, .pick-row:active, .ttk-card:active, .station-card:active, .quick-card:active, .btn:active { transform: none; }
 }
 /* Ленты кнопок прокручиваются плавно и с «прилипанием» */
