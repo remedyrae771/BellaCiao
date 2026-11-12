@@ -136,10 +136,10 @@
       state.restored = true; restoreSession();
     }
     const a = document.activeElement;
-    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== 'ttk-search';
+    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== 'ttk-search' && a.id !== 'report-date' && a.id !== 'ts-from' && a.id !== 'ts-to';
     const formView = ['ttk-edit', 'member', 'shift-edit'].includes(state.view);
     if (state.user && (typing || formView)) { pendingRender = true; return; }
-    render();
+    scheduleRender();
   }
 
   async function initLocal() {
@@ -241,6 +241,9 @@
       render();
     } else {
       state.failed++;
+      state.loginError = 'Неверный код. Попробуйте ещё раз';
+      clearTimeout(state.loginErrorT);
+      state.loginErrorT = setTimeout(() => { state.loginError = ''; if (!state.user && !state.group) render(); }, 2500);
       state.pin = '';
       if (state.failed >= 5) {
         state.lockedUntil = Date.now() + 30000;
@@ -264,6 +267,7 @@
     if (!user) return;
     state.user = user; state.group = null;
     state.view = 'home'; state.params = {};
+    try { history.replaceState({ bc: true, view: 'home', params: {}, depth: 0 }, ''); navDepth = 0; } catch { /* нет истории */ }
     save(KEY.session, { id: user.id, at: Date.now() });
     resetIdle();
     render();
@@ -299,11 +303,34 @@
   const LONG_SHIFT_MS = 16 * 3600000;
 
   /* ---------------- Навигация ---------------- */
-  function go(view, params = {}) {
+  // Ключ экрана: по нему помним прокрутку и понимаем, тот же ли это экран
+  const viewKeyOf = (view, p = {}) => [view, p.station, p.type, p.id, p.tab, p.cat, p.edit, p.from, p.to, p.date].join('|');
+  const scrollMemory = {};
+  let navDepth = 0;
+
+  // Переход на экран. Кнопка «Назад» телефона возвращает на предыдущий экран, а не закрывает приложение
+  function go(view, params = {}, opts = {}) {
+    scrollMemory[viewKeyOf(state.view, state.params)] = window.scrollY;
     state.view = view; state.params = params; pendingRender = false;
     if (state.user) save(KEY.session, { id: state.user.id, at: Date.now() });
+    if (!opts.fromHistory) {
+      try { history.pushState({ bc: true, view, params, depth: navDepth + 1 }, ''); navDepth++; } catch { /* история недоступна */ }
+    }
     render();
-    window.scrollTo(0, 0);
+    window.scrollTo(0, opts.fromHistory ? (scrollMemory[viewKeyOf(view, params)] || 0) : 0);
+  }
+
+  window.addEventListener('popstate', (e) => {
+    if (!state.user) return;
+    const st = e.state && e.state.bc ? e.state : { view: 'home', params: {}, depth: 0 };
+    navDepth = st.depth || 0;
+    document.querySelector('.modal')?.remove();
+    go(st.view, st.params || {}, { fromHistory: true });
+  });
+
+  // Кнопка «‹» в шапке: назад по истории, если есть куда, иначе на указанный экран
+  function goBack(fallback) {
+    if (navDepth > 0) history.back(); else go(fallback);
   }
 
   /* ---------------- Чек-листы: данные ---------------- */
@@ -338,41 +365,59 @@
 
   /* ---------------- Иконки (линейные SVG) ---------------- */
   const ICONS = {
-    home: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
-    checklist: 'M10 6h10M10 12h10M10 18h10M3.5 6l1.5 1.5L8 4.5M3.5 12l1.5 1.5L8 10.5M3.5 18l1.5 1.5L8 16.5',
-    book: 'M3 5h6a3 3 0 0 1 3 3v12a2.5 2.5 0 0 0-2.5-2.5H3zM21 5h-6a3 3 0 0 0-3 3v12a2.5 2.5 0 0 1 2.5-2.5H21z',
-    shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+    home: 'M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z',
+    checklist: 'M10.5 7H20M10.5 12H20M10.5 17H20M4 7l1.4 1.4L8 5.8M4 12l1.4 1.4L8 10.8M4 17l1.4 1.4L8 15.8',
+    book: 'M12 6.5C10.4 5 8 4.5 4 4.5v14c4 0 6.4.5 8 2 1.6-1.5 4-2 8-2v-14c-4 0-6.4.5-8 2zM12 6.5v14',
+    shield: 'M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6zM9 12l2 2 4-4',
     users: 'M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
-    clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+    clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3.2 2',
     chart: 'M4 20V11M10 20V5M16 20v-6M2 20h20',
-    lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+    lock: 'M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1zM8 11V7a4 4 0 0 1 8 0v4M12 15v2',
     chevL: 'M15 18l-6-6 6-6', chevR: 'M9 6l6 6-6 6', chevUp: 'M6 15l6-6 6 6', chevDown: 'M6 9l6 6 6-6',
     plus: 'M12 5v14M5 12h14', minus: 'M5 12h14',
-    edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+    edit: 'M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17zM14.5 7.5l2 2',
     download: 'M12 3v12M7 10l5 5 5-5M4 21h16',
     x: 'M6 6l12 12M18 6 6 18',
     check: 'M5 12.5l4.5 4.5L19 7.5',
-    logout: 'M15 4h4v16h-4M10 17l5-5-5-5M15 12H3',
-    alert: 'M12 3 2 20h20zM12 10v4M12 17h.01',
+    logout: 'M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3M10 17l5-5-5-5M15 12H3',
+    alert: 'M12 3.5 2.5 20h19zM12 10v4.5M12 17.2h.01',
     search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5',
-    snowflake: 'M12 2v20M3.3 7l17.4 10M20.7 7 3.3 17M9 3.5 12 6l3-2.5M9 20.5l3-2.5 3 2.5',
-    pasta: 'M3 11h18a9 9 0 0 1-18 0zM7.5 11c0-3 2-5.5 5-5.5M11.5 11c0-2 1-3.5 3-3.5M16 2l-4.5 9M20 3.5l-5.5 7.5',
-    flame: 'M12 22c4 0 7-2.6 7-7 0-3.2-2-5.6-4-7.6 0 2.6-1.4 4-3 4 0-3-1-6.2-4-9.4 0 4.2-3 6.6-3 11.6C5 18.7 8 22 12 22z',
-    bell: 'M3 18h18M5.5 18a6.5 6.5 0 0 1 13 0M12 11.5V9M10 9h4M2 21h20',
-    pizza: 'M3 7c6-3 12-3 18 0L12 22zM4.6 9.7c4.9-2.1 9.9-2.1 14.8 0M9.5 12h.01M14 11.5h.01M12 16h.01',
-    cake: 'M3 21h18M5 21v-8h14v8M5 16c2.3 1.4 4.7 1.4 7 0s4.7-1.4 7 0M12 13V9M12 6.5V6',
-    chefhat: 'M7 17h10v4H7zM7 17v-4.2A4 4 0 0 1 6.3 5a5.5 5.5 0 0 1 11.4 0A4 4 0 0 1 17 12.8V17',
+    backspace: 'M9 5h11a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-6-7zM12.5 9.5l5 5M17.5 9.5l-5 5',
+    // станции
+    snowflake: 'M12 2.5v19M3.8 7.2l16.4 9.6M20.2 7.2 3.8 16.8M9.3 4.3 12 6.2l2.7-1.9M9.3 19.7l2.7-1.9 2.7 1.9M4.4 10.6l3.1.8-.8 3.1M19.6 13.4l-3.1-.8.8-3.1M4.4 13.4l3.1-.8-.8-3.1M19.6 10.6l-3.1.8.8 3.1',
+    pasta: 'M3.5 11.5h17a8.5 8.5 0 0 1-17 0zM7.5 11.5c0-2.2 2-4 4.5-4s4.5 1.8 4.5 4M10 11.5c0-1.1.9-2 2-2s2 .9 2 2M17.5 2.5l-4 9M20.5 4l-5.5 7.5',
+    flame: 'M12 21.5c3.9 0 7-2.7 7-6.8 0-3.2-2-5.6-3.9-7.5 0 2.5-1.4 3.9-2.9 3.9 0-3-1-6.2-4-8.6 0 4.1-3.2 6.4-3.2 11.4 0 4.6 3 7.6 7 7.6zM12 21.5c-1.7 0-3-1.3-3-3 0-2 1.5-3 3-4.8 1.5 1.8 3 2.8 3 4.8 0 1.7-1.3 3-3 3z',
+    bell: 'M3 18h18M4.5 18a7.5 7.5 0 0 1 15 0M12 10.5V8.5M10.2 8.5h3.6M2.5 21h19',
+    pizza: 'M12 21.5 3 6.6A17 17 0 0 1 21 6.6zM5 9.8a13.5 13.5 0 0 1 14 0M10 12.6h.01M14 12.2h.01M12 16.5h.01',
+    cake: 'M3.5 21h17M5.5 21v-6.5A1.5 1.5 0 0 1 7 13h10a1.5 1.5 0 0 1 1.5 1.5V21M5.5 17.2c1.6 1.2 3.2 1.2 4.8 0s3.2-1.2 4.8 0 2.6 1.1 3.4.6M12 13V9.8M12 7.3c-.8 0-1.4-.6-1.4-1.4 0-1 1.4-2.4 1.4-2.4s1.4 1.4 1.4 2.4c0 .8-.6 1.4-1.4 1.4z',
+    chefhat: 'M7 16.5h10V20a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1zM7 16.5V13a4 4 0 0 1-.9-7.8A5.5 5.5 0 0 1 12 3a5.5 5.5 0 0 1 5.9 2.2A4 4 0 0 1 17 13v3.5',
+    // категории ТТК
+    coffee: 'M4.5 9h11.5v5a5 5 0 0 1-5 5H9.5a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3.5c-.7.8-.7 1.7 0 2.5M11.5 3.5c-.7.8-.7 1.7 0 2.5M3.5 21.5h14',
+    pot: 'M4 10h16v6.5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM2 10h20M8.5 10V8a3.5 3.5 0 0 1 7 0v2',
+    soup: 'M3.5 11.5h17a8.5 8.5 0 0 1-17 0zM8.5 8.5c.9-1.1.9-2.2 0-3.3M12 8.5c.9-1.1.9-2.2 0-3.3M15.5 8.5c.9-1.1.9-2.2 0-3.3',
+    meat: 'M16 4.2c3 1.6 4.4 5.2 2.9 8.6-1.8 4-6.8 6.9-10.6 6.2-3.3-.6-4.7-3.6-3.6-6.6 1.2-3.6 4.4-5 6.6-6.8 1.6-1.3 3.1-2 4.7-1.4zM9.6 13.4a2 2 0 1 0 4 0 2 2 0 0 0-4 0z',
+    carrot: 'M16.5 7.5 6 19.2c-1 1-2.6.1-2.2-1.2L7.5 8c1.3-2.6 4.8-3.3 7.3-1.5zM15.5 6.5 18 3M16.5 7.5l3.8-.9M16.5 7.5l1.2-3.8M8.4 13l2 .9M7.2 16.6l1.6.7',
+    bread: 'M6 20h12a1 1 0 0 0 1-1v-7.2A4 4 0 0 0 17 5H7a4 4 0 0 0-2 6.8V19a1 1 0 0 0 1 1zM9.5 10l1.5 1.5M13 10l1.5 1.5',
+    // ТБ
     sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1.5v2M12 20.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M1.5 12h2M20.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4',
     moon: 'M20.5 13.5A8.5 8.5 0 1 1 10.5 3.5a6.8 6.8 0 0 0 10 10z',
-    clipboard: 'M9 3h6v3H9zM7 4.5H5V21h14V4.5h-2M9 11h6M9 15h6M9 19h3',
+    clipboard: 'M9 3h6v3H9zM7 4.5H5.5a.5.5 0 0 0-.5.5v15.5a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5V5a.5.5 0 0 0-.5-.5H17M8.5 11h7M8.5 15h7M8.5 19h3.5',
     knife: 'M3 21 13.5 10.5M13.5 10.5 20 4c1 3.5 0 6.5-3 8.5l-3.5-2z',
-    extinguisher: 'M8 9h6v12H8zM11 9V6M8 6h6.5l2.5-2M9 6a3 3 0 0 0-4 3v3',
+    extinguisher: 'M8 9h6v11a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1zM11 9V6M8 6h6.5l2.5-2M9 6a3 3 0 0 0-4 3v3',
     bolt: 'M13 2 4 14h7l-1 8 9-12h-7z',
     drop: 'M12 3s7 7 7 12a7 7 0 0 1-14 0c0-5 7-12 7-12z',
-    firstaid: 'M3 7h18v13H3zM8.5 7V4h7v3M12 10v7M8.5 13.5h7',
+    firstaid: 'M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM8.5 7V4.5h7V7M12 10.5v6M9 13.5h6',
     cog: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1',
   };
-  const ic = (name, size = 20) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] || ICONS.shield}"/></svg>`;
+  // Цвет плитки: у каждой станции и категории ТТК свой
+  const STATION_TONE = { cold: 'sky', pasta: 'amber', grill: 'coral', pass: 'navy', pizza: 'rose', pastry: 'plum', chef: 'violet' };
+  const CATEGORY_LOOK = {
+    'Завтраки': ['coffee', 'amber'], 'Соусы и заправки': ['pot', 'rose'], 'Супы и бульоны': ['soup', 'sky'],
+    'Мясо и птица': ['meat', 'coral'], 'Начинки для равиоли': ['pasta', 'plum'], 'Закуски и намазки': ['bread', 'teal'],
+    'Овощи и гарниры': ['carrot', 'green'],
+  };
+  const tone = (stationId) => 'tone-' + (STATION_TONE[stationId] || 'navy');
+  const ic = (name, size = 20) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] || ICONS.shield}"/></svg>`;
 
   /* ---------------- Компоненты ---------------- */
   const ring = (pct, size = 56) => {
@@ -386,7 +431,7 @@
   const header = (title, back) => `
     <div class="topbar-wrap">
       <header class="topbar">
-        ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
+        ${back ? `<button class="icon-btn" data-back="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
         <h1>${title === 'Bella Ciao' ? '' : esc(title)}</h1>
         <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
       </header>
@@ -420,7 +465,7 @@
         ${open
           ? `<div class="shift-timer" data-since="${open.start}">${fmtDur(Date.now() - open.start)}</div>
              <small>Начало: ${fmtTime(open.start)} · ${fmtDate(open.start)}</small>`
-          : `<div class="shift-timer muted-t">—</div><small>Отметьте приход, когда начинаете работу</small>`}
+          : `<div class="shift-timer is-off">Не на смене</div><small>Отметьте приход, когда начинаете работу</small>`}
         <small class="shift-month">За этот месяц: <b>${fmtNum(hours(monthMs))} ч</b></small>
       </div>
       ${open
@@ -438,14 +483,14 @@
       <main class="login">
         <div class="login-card pick">
           <div class="pick-head">
-            <span class="st-icon">${ic(g.icon, 22)}</span>
+            <span class="st-icon ${tone(g.id)}">${ic(g.icon, 24)}</span>
             <div><div class="eyebrow">${esc(g.name)}</div><h2>Кто вы?</h2></div>
           </div>
           <div class="pick-list">
             ${members.map((u) => {
               const open = openShift(u.id);
               return `<button class="pick-row" data-pick="${u.id}">
-                <span class="avatar lg">${esc(initials(u.name))}</span>
+                <span class="avatar lg ${tone(u.role === 'chef' ? 'chef' : u.station)}">${esc(initials(u.name))}</span>
                 <span class="pick-body"><b>${esc(u.name)}</b>
                   <small>${ROLES[u.role].name}${open ? ` · <span class="on-shift">на смене с ${fmtTime(open.start)}</span>` : ''}</small></span>
                 <span class="chev">${ic('chevR', 18)}</span>
@@ -472,16 +517,20 @@
             </div>
             <div class="logo-tag">Кухня · Алматы</div>
           </div>
-          <p class="login-hint">${Sync.status === 'loading' ? 'Подключение к общей базе…'
-            : Sync.status === 'offline' ? 'Нет связи с общей базой. Проверьте интернет — приложение подключится само.'
+          <h1 class="login-title">Вход на кухню</h1>
+          <p class="login-hint ${state.loginError || Sync.status === 'offline' || Date.now() < state.lockedUntil ? 'is-warn' : ''}" role="status">${Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.'
+            : state.loginError ? state.loginError
+            : Sync.status === 'loading' ? 'Подключаемся к базе…'
+            : Sync.status === 'offline' ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
             : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
-          <div class="pin-dots">${dots}</div>
+          <div class="pin-dots" aria-label="Введено цифр: ${state.pin.length} из 4">${dots}</div>
           <div class="keypad">
             ${keys.map((k) => k === ''
               ? '<span></span>'
-              : `<button class="key${k === '⌫' ? ' key-del' : ''}" data-key="${k}" ${locked ? 'disabled' : ''} ${k === '⌫' ? 'aria-label="Стереть"' : ''}>${k === '⌫' ? ic('chevL', 24) : k}</button>`).join('')}
+              : `<button class="key${k === '⌫' ? ' key-del' : ''}" data-key="${k}" ${locked ? 'disabled' : ''} ${k === '⌫' ? 'aria-label="Стереть"' : ''}>${k === '⌫' ? ic('backspace', 26) : k}</button>`).join('')}
           </div>
-          <p class="login-foot">Служебное приложение для сотрудников кухни${Sync.status === 'online' ? ' · общая база подключена' : Sync.status === 'local' ? ' · данные на этом устройстве' : ''}</p>
+          <p class="login-foot"><span class="net net-${Sync.status}"><i></i>${Sync.status === 'online' ? 'общая база подключена'
+            : Sync.status === 'local' ? 'данные на этом устройстве' : Sync.status === 'offline' ? 'нет связи' : 'подключение…'}</span></p>
         </div>
       </main>`;
   }
@@ -522,7 +571,7 @@
           ${myStations.map((s) => {
             const p = stationProgress(s.id);
             return `<button class="card station-card" data-go="checklists" data-station="${s.id}">
-              <span class="st-icon">${ic(s.icon, 22)}</span>
+              <span class="st-icon ${tone(s.id)}">${ic(s.icon, 24)}</span>
               <span class="st-body"><b>${esc(s.name)}</b><small>${p.total ? `${p.n} из ${p.total} пунктов` : 'Чек-лист не заполнен'}</small></span>
               ${ring(p.pct)}
             </button>`;
@@ -531,9 +580,9 @@
 
         <h2 class="section-title">Быстрый доступ</h2>
         <div class="quick">
-          <button class="card quick-card" data-go="ttk"><span class="q-ic">${ic('book', 22)}</span><b>ТТК</b><small>Технологические карты</small></button>
-          <button class="card quick-card" data-go="safety"><span class="q-ic">${ic('shield', 22)}</span><b>Техника безопасности</b><small>Правила и инструкции</small></button>
-          ${can.report() ? `<button class="card quick-card" data-go="team"><span class="q-ic">${ic('clock', 22)}</span><b>Табель</b><small>Часы и оплата</small></button>` : ''}
+          <button class="card quick-card" data-go="ttk"><span class="q-ic tone-plum">${ic('book', 22)}</span><span class="q-t"><b>ТТК</b><small>Технологические карты</small></span>${ic('chevR', 18)}</button>
+          <button class="card quick-card" data-go="safety"><span class="q-ic tone-green">${ic('shield', 22)}</span><span class="q-t"><b>Техника безопасности</b><small>Правила и инструкции</small></span>${ic('chevR', 18)}</button>
+          ${can.report() ? `<button class="card quick-card" data-go="team"><span class="q-ic tone-sky">${ic('clock', 22)}</span><span class="q-t"><b>Табель</b><small>Часы и оплата</small></span>${ic('chevR', 18)}</button>` : ''}
         </div>
       </main>${nav()}`;
   }
@@ -662,10 +711,10 @@
           <div class="ttk-list">
             ${l.map((t) => `
               <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-                <span class="ttk-st">${ic(t.station ? stationById(t.station).icon : (t.kind === 'dish' ? 'sun' : 'book'), 22)}</span>
+                <span class="ttk-st tone-${(CATEGORY_LOOK[t.category] || ['book', 'navy'])[1]}">${ic((CATEGORY_LOOK[t.category] || ['book'])[0], 22)}</span>
                 <span class="ttk-body">
                   <b>${esc(t.name)}</b>
-                  <small>${t.kind === 'dish' ? 'Блюдо' : 'ПФ'} · ${esc(ttkStationLabel(t))} · выход ${esc(t.yield || '—')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
+                  <small>${t.kind === 'dish' ? 'Блюдо' : 'ПФ'}${t.station ? ' · ' + esc(stationById(t.station).short) : ''} · ${esc(t.yield || '—')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
                 </span>
                 <span class="chev">${ic('chevR', 18)}</span>
               </button>`).join('')}
@@ -827,7 +876,7 @@
         ${STATIONS.map((s) => {
           const sp = stationProgress(s.id, date);
           return `<div class="card report-card">
-            <div class="rc-head"><span class="rc-t">${ic(s.icon, 18)} <b>${esc(s.name)}</b></span>${ring(sp.pct, 48)}</div>
+            <div class="rc-head"><span class="rc-t"><span class="mini-tile ${tone(s.id)}">${ic(s.icon, 18)}</span> <b>${esc(s.name)}</b></span>${ring(sp.pct, 48)}</div>
             ${CHECKLIST_TYPES.map((t) => {
               const p = progress(s.id, t.id, date);
               return `<div class="rc-line"><span>${t.name}</span>
@@ -844,7 +893,7 @@
           const relevant = safety.filter((x) => !x.stations.length || x.stations.includes(u.station));
           const ackN = relevant.filter((x) => (acks[u.id] || {})[x.id]).length;
           return `<div class="card member ${u.disabled ? 'disabled' : ''}">
-            <div class="avatar lg">${esc(initials(u.name))}</div>
+            <div class="avatar lg ${tone(u.role === 'chef' ? 'chef' : u.station)}">${esc(initials(u.name))}</div>
             <div class="m-body">
               <b>${esc(u.name)}</b>
               <small>${ROLES[u.role].name} · ${esc(u.role === 'chef' ? 'вход по коду шефа' : stationById(u.station).name)}</small>
@@ -856,7 +905,7 @@
       </div>
       ${can.manageTeam() ? `<button class="fab" data-go="member" aria-label="Добавить сотрудника">${ic('plus', 26)}</button>` : ''}`;
 
-    const tabs = [['hours', 'Табель'], ['report', 'Чек-листы'], ['staff', 'Сотрудники']];
+    const tabs = [['hours', 'Табель'], ['report', 'Чек-листы'], ['staff', 'Люди']];
     if (can.manageTeam()) tabs.push(['codes', 'Коды']);
     const body = { hours: timesheet, report: () => report, staff: () => team, codes: codesTab }[tab] || timesheet;
 
@@ -915,9 +964,9 @@
 
       <div class="ts-list">
         ${rows.map((r) => `
-          <details class="card ts-row">
+          <details class="card ts-row" data-k="ts-${r.u.id}">
             <summary>
-              <span class="avatar lg">${esc(initials(r.u.name))}</span>
+              <span class="avatar lg ${tone(r.u.role === 'chef' ? 'chef' : r.u.station)}">${esc(initials(r.u.name))}</span>
               <span class="m-body"><b>${esc(r.u.name)}</b><small>${ROLES[r.u.role].name} · смен: ${r.list.length}${showMoney ? ` · ${money(r.u.rate || 0)}/ч` : ''}</small></span>
               <span class="ts-num"><b>${fmtNum(r.h)} ч</b>${showMoney ? `<small>${money(r.sum)}</small>` : ''}</span>
             </summary>
@@ -949,7 +998,7 @@
       <div class="codes">
         ${groups.map((g) => `
           <form class="card code-row" data-form="code" data-group="${g.id}">
-            <span class="st-icon">${ic(g.icon, 22)}</span>
+            <span class="st-icon ${tone(g.id)}">${ic(g.icon, 24)}</span>
             <span class="m-body"><b>${esc(g.name)}</b>
               <small>${codes[g.id]?.isDefault ? '<span class="warn-t">стандартный код — смените</span>' : 'код установлен'} · ${groupMembers(g.id).length} чел.</small></span>
             <span class="code-in">
@@ -969,7 +1018,7 @@
     }
     if (!Object.values(lists).some((l) => l.length)) return '<p class="muted">Пункты чек-листа не заданы</p>';
     if (!out.length) return '<p class="ok-t">Всё выполнено</p>';
-    return `<details class="missing"><summary>Не выполнено: ${out.length}</summary><ul>${out.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
+    return `<details class="missing" data-k="miss-${station}"><summary>Не выполнено: ${out.length}</summary><ul>${out.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
   }
 
   function viewMember() {
@@ -1044,15 +1093,56 @@
     'shift-edit': viewShiftEdit, 'ttk-storage': viewTtkStorage,
   };
 
+  // Перерисовка не чаще раза за кадр (несколько обновлений из базы подряд → одна перерисовка)
+  let renderQueued = false;
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; render(); });
+  }
+
+  let lastViewKey = null;
   function render() {
     const app = $('#app');
-    if (!state.user) { app.innerHTML = viewLogin(); document.body.className = 'is-login'; return; }
+    if (!state.user) {
+      app.innerHTML = viewLogin(); document.body.className = 'is-login'; lastViewKey = 'login'; return;
+    }
     document.body.className = '';
     // защита маршрутов
     if ((state.view === 'team' && !can.report()) || (state.view === 'member' && !can.manageTeam())
       || (state.view === 'shift-edit' && !can.manageTeam())
       || (state.view === 'ttk-edit' && !can.editTtk())) state.view = 'home';
+
+    // Тот же экран (обновились данные) — сохраняем прокрутку, фокус, раскрытые блоки и ленты кнопок
+    const key = viewKeyOf(state.view, state.params);
+    const same = key === lastViewKey;
+    const y = window.scrollY;
+    const a = document.activeElement;
+    const focus = same && a && a.id && app.contains(a)
+      ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
+    const open = same ? [...app.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k) : [];
+    const strips = same ? [...app.querySelectorAll('.chips')].map((c) => c.scrollLeft) : [];
+
     app.innerHTML = (VIEWS[state.view] || viewHome)();
+    lastViewKey = key;
+
+    if (same) {
+      window.scrollTo(0, y);
+      open.forEach((k) => { const d = app.querySelector(`details[data-k="${k}"]`); if (d) d.open = true; });
+      app.querySelectorAll('.chips').forEach((c, i) => { if (strips[i]) c.scrollLeft = strips[i]; });
+      if (focus) {
+        const el = document.getElementById(focus.id);
+        if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(focus.start, focus.end); } catch { /* не текстовое поле */ } }
+      }
+    } else {
+      // Новый экран: мягкое появление и выбранная кнопка в ленте видна
+      app.querySelector('main')?.classList.add('enter');
+      app.querySelectorAll('.chips .chip.on').forEach((c) => {
+        const strip = c.parentElement;
+        const hidden = c.offsetLeft + c.offsetWidth > strip.clientWidth - 8;
+        if (hidden) strip.scrollLeft = c.offsetLeft - (strip.clientWidth - c.offsetWidth) / 2;
+      });
+    }
   }
 
   // Живой таймер смены
@@ -1132,6 +1222,7 @@
       toast('Сотрудник удалён'); go('team', { tab: 'staff' }); return;
     }
     if (el.hasAttribute('data-logout')) { logout(); return; }
+    if (d.back) { goBack(d.back); return; }
 
     if (d.go) {
       const p = {};
@@ -1166,9 +1257,7 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'ttk-search') {
       state.params.q = e.target.value;
-      const pos = e.target.selectionStart;
       render();
-      const inp = $('#ttk-search'); inp.focus(); inp.setSelectionRange(pos, pos);
     }
   });
 
