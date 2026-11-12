@@ -583,12 +583,12 @@ input, select, textarea { font-size: 16px !important; }
 /* Мягкое появление нового экрана */
 main.enter { animation: page-in .18s ease-out both; }
 @keyframes page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.login-card { animation: page-in .25s ease-out both; }
+.login-card.enter { animation: page-in .25s ease-out both; }
 .modal { animation: fade-in .15s ease-out both; }
 .modal-box { animation: page-in .18s ease-out both; }
 @keyframes fade-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  main.enter, .login-card, .modal, .modal-box { animation: none; }
+  main.enter, .login-card.enter, .modal, .modal-box { animation: none; }
   .card[data-go]:active, .pick-row:active, .ttk-card:active, .station-card:active, .quick-card:active, .btn:active { transform: none; }
 }
 /* Ленты кнопок прокручиваются плавно и с «прилипанием» */
@@ -624,3 +624,50 @@ main.enter { animation: page-in .18s ease-out both; }
 .segmented button { white-space: nowrap; }
 .segmented .seg-t { white-space: normal; }
 @media (max-width: 400px) { .segmented button { font-size: 13px; padding-inline: 4px; } }
+
+/* ============================================================
+   Плавность на уровне мессенджеров (v4)
+   ============================================================ */
+/* Переходы между экранами: вперёд — сдвиг справа, назад — слева, вкладки — мягкая смена */
+main.enter-forward { animation: slide-from-right .24s cubic-bezier(.2, .8, .2, 1) both; }
+main.enter-back { animation: slide-from-left .24s cubic-bezier(.2, .8, .2, 1) both; }
+main.enter-tab { animation: tab-in .16s ease-out both; }
+@keyframes slide-from-right { from { opacity: 0; transform: translate3d(32px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes slide-from-left { from { opacity: 0; transform: translate3d(-32px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes tab-in { from { opacity: .4; } to { opacity: 1; } }
+/* Во время анимации не появляется горизонтальная прокрутка */
+#app { overflow-x: clip; }
+/* Плавные состояния элементов, которые теперь обновляются на месте */
+.check-row .box { transition: background-color .16s ease, border-color .16s ease, transform .16s ease; }
+.checklist li.done .box { transform: scale(1.04); }
+.checklist li .check-row { transition: background-color .2s ease; }
+.check-row .txt { transition: color .2s ease; }
+.bar span { transition: width .35s cubic-bezier(.2, .8, .2, 1); }
+.ring-fg { transition: stroke-dashoffset .45s cubic-bezier(.2, .8, .2, 1); }
+.chip, .segmented button { transition: background-color .15s ease, color .15s ease, box-shadow .15s ease; }
+.bottom-nav .ni { transition: background-color .18s ease; }
+.pin-dots i { transition: background-color .12s ease, transform .12s ease; }
+.pin-dots i.on { transform: scale(1.12); }
+/* Клавиатура открыта — нижнее меню и «+» не закрывают поле ввода (только на телефонах) */
+@media (hover: none) {
+  body.kb .bottom-nav, body.kb .fab { display: none; }
+  body.kb .page { padding-bottom: 32px; }
+}
+/* Плашка «Доступна новая версия» */
+.update-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 60;
+  bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom, 0px));
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px;
+  background: var(--navy); color: #fff; font-size: 14px; box-shadow: var(--shadow-2); animation: tab-in .2s ease-out both;
+  max-width: calc(100% - 32px); white-space: nowrap;
+}
+.update-bar b { color: var(--sky); }
+/* Прокрутка без рывков на iOS и чёткий текст при анимации */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+main { will-change: auto; backface-visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  main.enter-forward, main.enter-back, main.enter-tab, .update-bar { animation: none; }
+  .bar span, .ring-fg, .check-row .box { transition: none; }
+}
+/* Карточки за пределами экрана не раскладываются заранее — длинные списки листаются легко */
+.ttk-card, .member, .ts-row, .report-card, .acc-item:not(.open) { content-visibility: auto; contain-intrinsic-size: auto 76px; }

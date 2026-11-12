@@ -19,12 +19,21 @@
     acks: 'bc_acks_v1',
     session: 'bc_session_v1',
   };
+  // Во время отрисовки экран только читает данные — одно чтение на ключ за кадр
+  let renderMemo = null;
   const load = (k, fallback) => {
-    if (Sync.handles(k)) { const v = Sync.get(k); return v === undefined ? fallback : v; }
-    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }
-    catch { return fallback; }
+    if (renderMemo && renderMemo.has(k)) { const v = renderMemo.get(k); return v === undefined ? fallback : v; }
+    const v = loadRaw(k);
+    if (renderMemo) renderMemo.set(k, v);
+    return v === undefined ? fallback : v;
+  };
+  const loadRaw = (k) => {
+    if (Sync.handles(k)) return Sync.get(k);
+    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : undefined; }
+    catch { return undefined; }
   };
   const save = (k, v) => {
+    if (renderMemo) renderMemo.delete(k);
     if (Sync.handles(k)) { Sync.set(k, v); return; }
     try { localStorage.setItem(k, JSON.stringify(v)); }
     catch { toast('Не удалось сохранить данные на устройстве'); }
@@ -37,6 +46,11 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
   const today = () => {
     const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  // Рабочий день кухни длится до 05:00: отметки закрытия после полуночи идут во вчерашний день
+  const workDay = () => {
+    const d = new Date(Date.now() - 5 * 3600e3);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -230,6 +244,16 @@
     render();
   }
 
+  // Точки кода обновляются на месте — экран не перерисовывается и не моргает
+  function updatePinDots() {
+    const dots = document.querySelectorAll('.pin-dots i');
+    if (!dots.length) { render(); return; }
+    dots.forEach((dot, i) => dot.classList.toggle('on', i < state.pin.length));
+    document.querySelector('.pin-dots')?.classList.remove('shake');
+    const box = document.querySelector('.pin-dots');
+    if (box) box.setAttribute('aria-label', `Введено цифр: ${state.pin.length} из 4`);
+  }
+
   async function tryLogin() {
     if (Date.now() < state.lockedUntil) return;
     const pin = state.pin;
@@ -309,15 +333,23 @@
   let navDepth = 0;
 
   // Переход на экран. Кнопка «Назад» телефона возвращает на предыдущий экран, а не закрывает приложение
+  const TABS = ['home', 'checklists', 'ttk', 'safety', 'team'];
   function go(view, params = {}, opts = {}) {
     scrollMemory[viewKeyOf(state.view, state.params)] = window.scrollY;
+    const sameScreen = screenOf(view, params) === screenOf(state.view, state.params);
+    // Направление перехода: назад — слева, вкладка — мягкая смена, остальное — справа
+    state.navDir = opts.fromHistory ? 'back' : TABS.includes(view) && (TABS.includes(state.view) || opts.tab) ? 'tab' : 'forward';
     state.view = view; state.params = params; pendingRender = false;
     if (state.user) save(KEY.session, { id: state.user.id, at: Date.now() });
     if (!opts.fromHistory) {
-      try { history.pushState({ bc: true, view, params, depth: navDepth + 1 }, ''); navDepth++; } catch { /* история недоступна */ }
+      try {
+        // Фильтры и вкладки внутри экрана не копятся в истории «Назад»
+        if (sameScreen) history.replaceState({ bc: true, view, params, depth: navDepth }, '');
+        else { history.pushState({ bc: true, view, params, depth: navDepth + 1 }, ''); navDepth++; }
+      } catch { /* история недоступна */ }
     }
     render();
-    window.scrollTo(0, opts.fromHistory ? (scrollMemory[viewKeyOf(view, params)] || 0) : 0);
+    if (!sameScreen) window.scrollTo(0, opts.fromHistory ? (scrollMemory[viewKeyOf(view, params)] || 0) : 0);
   }
 
   window.addEventListener('popstate', (e) => {
@@ -340,7 +372,7 @@
   }
   function toggleCheck(station, type, itemId) {
     const all = load(KEY.checks, {});
-    const k = checkKey(today(), station, type);
+    const k = checkKey(workDay(), station, type);
     const rec = all[k] || {};
     if (rec[itemId]) delete rec[itemId];
     else rec[itemId] = { by: state.user.name, uid: state.user.id, at: Date.now() };
@@ -350,13 +382,13 @@
     for (const key of Object.keys(all)) if (key.split('|')[0] < cutoff) delete all[key];
     save(KEY.checks, all);
   }
-  function progress(station, type, date = today()) {
+  function progress(station, type, date = workDay()) {
     const items = (load(KEY.lists, {})[station] || {})[type] || [];
     const done = getChecks(date, station, type);
     const n = items.filter((i) => done[i.id]).length;
     return { n, total: items.length, pct: items.length ? Math.round((n / items.length) * 100) : 0 };
   }
-  function stationProgress(station, date = today()) {
+  function stationProgress(station, date = workDay()) {
     let n = 0, total = 0;
     for (const t of CHECKLIST_TYPES) { const p = progress(station, t.id, date); n += p.n; total += p.total; }
     return { n, total, pct: total ? Math.round((n / total) * 100) : 0 };
@@ -591,9 +623,11 @@
     const stations = visibleStations();
     const st = state.params.station && stations.some((s) => s.id === state.params.station)
       ? state.params.station : (stations.find((s) => s.id === state.user.station) || stations[0]).id;
-    const type = state.params.type || (new Date().getHours() >= 21 ? 'close' : 'open');
+    const hr = new Date().getHours();
+    const type = state.params.type || (hr >= 21 || hr < 5 ? 'close' : hr >= 11 ? 'shift' : 'open');
+    state.lastCl = { station: st, type, at: Date.now() };
     const items = (load(KEY.lists, {})[st] || {})[type] || [];
-    const done = getChecks(today(), st, type);
+    const done = getChecks(workDay(), st, type);
     const p = progress(st, type);
     const editing = state.params.edit && can.editLists();
 
@@ -865,12 +899,12 @@
     const staff = load(KEY.staff, []);
     const acks = load(KEY.acks, {});
     const safety = load(KEY.safety, []);
-    const date = state.params.date || today();
+    const date = state.params.date || workDay();
     const tab = state.params.tab || 'hours';
 
     const report = `
       <div class="date-row">
-        <label>Дата отчёта <input type="date" id="report-date" value="${date}" max="${today()}"/></label>
+        <label>Дата отчёта <input type="date" id="report-date" value="${date}" max="${workDay()}"/></label>
       </div>
       <div class="report">
         ${STATIONS.map((s) => {
@@ -1101,48 +1135,85 @@
     requestAnimationFrame(() => { renderQueued = false; render(); });
   }
 
-  let lastViewKey = null;
+  /* ---------- Точечное обновление экрана (как в нативных приложениях) ----------
+     Новая разметка сравнивается с тем, что на экране, и меняются только
+     отличающиеся элементы. Узлы, фокус, прокрутка, раскрытые блоки, нажатые
+     кнопки и идущие анимации сохраняются — экран не мигает. */
+  function morphChildren(from, to) {
+    const a = [...from.childNodes], b = [...to.childNodes];
+    for (let i = 0; i < b.length; i++) {
+      const x = a[i], y = b[i];
+      if (!x) { from.appendChild(y); continue; }
+      const keyX = x.nodeType === 1 ? x.getAttribute('data-id') || x.getAttribute('data-k') || '' : '';
+      const keyY = y.nodeType === 1 ? y.getAttribute('data-id') || y.getAttribute('data-k') || '' : '';
+      if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || keyX !== keyY) { from.replaceChild(y, x); continue; }
+      if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+      morphEl(x, y);
+    }
+    for (let i = b.length; i < a.length; i++) a[i].remove();
+  }
+  function morphEl(x, y) {
+    for (const { name } of [...x.attributes]) {
+      if (y.hasAttribute(name)) continue;
+      if (name === 'open' && x.tagName === 'DETAILS') continue; // раскрытое пользователем не сворачиваем
+      x.removeAttribute(name);
+    }
+    for (const { name, value } of [...y.attributes]) if (x.getAttribute(name) !== value) x.setAttribute(name, value);
+    const focused = x === document.activeElement;
+    if (x.tagName === 'INPUT' || x.tagName === 'SELECT') {
+      if (!focused && x.value !== y.value) x.value = y.value;
+      if (x.type === 'checkbox' || x.type === 'radio') x.checked = y.checked;
+      if (x.tagName === 'INPUT') return;
+    }
+    if (x.tagName === 'TEXTAREA') { if (!focused && x.value !== y.value) x.value = y.value; return; }
+    morphChildren(x, y);
+  }
+
+  // «Экран» — это раздел (и карточка/сотрудник/смена для экранов-подробностей); фильтры и вкладки — тот же экран
+  const screenOf = (view, p = {}) => (['ttk-view', 'ttk-edit', 'member', 'shift-edit'].includes(view) ? view + ':' + (p.id || '') : view);
+
+  let lastScreen = null;
+  let lastHtml = '';
   function render() {
     const app = $('#app');
     if (!state.user) {
-      app.innerHTML = viewLogin(); document.body.className = 'is-login'; lastViewKey = 'login'; return;
+      const screen = 'login' + (state.group || '');
+      renderMemo = new Map();
+      let html;
+      try { html = viewLogin(); } finally { renderMemo = null; }
+      document.body.classList.add('is-login');
+      if (screen === lastScreen) { if (html !== lastHtml) patch(app, html); }
+      else { app.innerHTML = html; app.querySelector('.login-card')?.classList.add('enter'); }
+      lastScreen = screen; lastHtml = html; return;
     }
-    document.body.className = '';
+    document.body.classList.remove('is-login');
     // защита маршрутов
     if ((state.view === 'team' && !can.report()) || (state.view === 'member' && !can.manageTeam())
       || (state.view === 'shift-edit' && !can.manageTeam())
       || (state.view === 'ttk-edit' && !can.editTtk())) state.view = 'home';
 
-    // Тот же экран (обновились данные) — сохраняем прокрутку, фокус, раскрытые блоки и ленты кнопок
-    const key = viewKeyOf(state.view, state.params);
-    const same = key === lastViewKey;
-    const y = window.scrollY;
-    const a = document.activeElement;
-    const focus = same && a && a.id && app.contains(a)
-      ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
-    const open = same ? [...app.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k) : [];
-    const strips = same ? [...app.querySelectorAll('.chips')].map((c) => c.scrollLeft) : [];
-
-    app.innerHTML = (VIEWS[state.view] || viewHome)();
-    lastViewKey = key;
-
-    if (same) {
-      window.scrollTo(0, y);
-      open.forEach((k) => { const d = app.querySelector(`details[data-k="${k}"]`); if (d) d.open = true; });
-      app.querySelectorAll('.chips').forEach((c, i) => { if (strips[i]) c.scrollLeft = strips[i]; });
-      if (focus) {
-        const el = document.getElementById(focus.id);
-        if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(focus.start, focus.end); } catch { /* не текстовое поле */ } }
-      }
+    const screen = screenOf(state.view, state.params);
+    renderMemo = new Map();
+    let html;
+    try { html = (VIEWS[state.view] || viewHome)(); } finally { renderMemo = null; }
+    if (screen === lastScreen) {
+      if (html !== lastHtml) patch(app, html);
     } else {
-      // Новый экран: мягкое появление и выбранная кнопка в ленте видна
-      app.querySelector('main')?.classList.add('enter');
+      app.innerHTML = html;
+      const dir = state.navDir || 'tab';
+      app.querySelector('main')?.classList.add('enter-' + dir);
       app.querySelectorAll('.chips .chip.on').forEach((c) => {
         const strip = c.parentElement;
-        const hidden = c.offsetLeft + c.offsetWidth > strip.clientWidth - 8;
-        if (hidden) strip.scrollLeft = c.offsetLeft - (strip.clientWidth - c.offsetWidth) / 2;
+        if (c.offsetLeft + c.offsetWidth > strip.clientWidth - 8) strip.scrollLeft = c.offsetLeft - (strip.clientWidth - c.offsetWidth) / 2;
       });
     }
+    state.navDir = null;
+    lastScreen = screen; lastHtml = html;
+  }
+  function patch(app, html) {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    morphChildren(app, t.content);
   }
 
   // Живой таймер смены
@@ -1159,7 +1230,7 @@
     if (d.key !== undefined) {
       if (d.key === '⌫') state.pin = state.pin.slice(0, -1);
       else if (state.pin.length < 4) state.pin += d.key;
-      render();
+      updatePinDots();
       if (state.pin.length === 4) setTimeout(tryLogin, 120);
       return;
     }
@@ -1217,6 +1288,10 @@
       toast('ТТК удалена'); go('ttk'); return;
     }
     if (d.delMember) {
+      if (allShifts().some((x) => x.uid === d.delMember)) {
+        await ask('У сотрудника есть смены в табеле. Если удалить его, эти часы пропадут из оплаты. Вместо удаления отметьте «Доступ отключён».', 'Понятно');
+        return;
+      }
       if (!(await ask('Удалить сотрудника?', 'Удалить', true))) return;
       save(KEY.staff, load(KEY.staff, []).filter((u) => u.id !== d.delMember));
       toast('Сотрудник удалён'); go('team', { tab: 'staff' }); return;
@@ -1229,13 +1304,15 @@
       for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit', 'from', 'to', 'cat']) if (d[k] !== undefined) p[k] = d[k];
       if (d.go === 'ttk-view' && !p.id) p.id = state.params.id;
       if (d.go === 'checklists') {
-        if (!p.station) p.station = state.params.station;
-        if (!p.type && p.station === state.params.station) p.type = state.params.type;
+        // С другого экрана — открываем ту станцию и тот чек-лист, что были открыты в последний раз (в течение 3 часов)
+        const last = state.lastCl && Date.now() - state.lastCl.at < 3 * 3600e3 ? state.lastCl : null;
+        if (!p.station) p.station = state.view === 'checklists' ? state.params.station : last?.station;
+        if (!p.type && p.station === (state.view === 'checklists' ? state.params.station : last?.station)) p.type = state.view === 'checklists' ? state.params.type : last?.type;
       }
       if (d.go === 'team' && p.tab === 'hours' && !p.from && state.params.from) { p.from = state.params.from; p.to = state.params.to; }
       if (d.go === 'ttk' && state.view !== 'ttk' && p.station === undefined) { p.station = state.lastTtk?.station; p.cat = state.lastTtk?.cat; }
       if (d.go === 'ttk') state.lastTtk = { station: p.station, cat: p.cat };
-      go(d.go, p);
+      go(d.go, p, el.closest('.bottom-nav') ? { tab: true } : {});
     }
   });
 
@@ -1259,6 +1336,17 @@
       state.params.q = e.target.value;
       render();
     }
+  });
+
+  const isField = (el) => el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !['checkbox', 'radio', 'date'].includes(el.type);
+  document.addEventListener('focusin', (e) => { if (isField(e.target)) document.body.classList.add('kb'); });
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!isField(document.activeElement)) {
+        document.body.classList.remove('kb');
+        if (pendingRender && !['ttk-edit', 'member', 'shift-edit'].includes(state.view)) { pendingRender = false; scheduleRender(); }
+      }
+    }, 50);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -1376,6 +1464,21 @@
   init().then(() => { if (Sync.status === 'local') restoreSession(); render(); });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // Проверяем обновления при возвращении в приложение
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
+    // Новая версия установлена: на экране входа обновляемся сразу, иначе предлагаем обновить
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;
+      if (!state.user) { location.reload(); return; }
+      if (document.querySelector('.update-bar')) return;
+      const bar = document.createElement('button');
+      bar.className = 'update-bar';
+      bar.innerHTML = `${ic('download', 18)}<span>Доступна новая версия · <b>Обновить</b></span>`;
+      bar.addEventListener('click', () => location.reload());
+      document.body.appendChild(bar);
+    });
   }
 })();
