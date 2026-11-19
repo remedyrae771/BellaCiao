@@ -88,13 +88,20 @@
     return new Promise((resolve) => {
       const wrap = document.createElement('div');
       wrap.className = 'modal';
-      wrap.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true">
-        <p>${esc(text)}</p>
-        <div class="modal-btns">
-          <button class="btn btn-ghost" data-ans="0">Отмена</button>
-          <button class="btn ${danger ? 'btn-danger' : ''}" data-ans="1">${esc(okLabel)}</button>
-        </div></div>`;
-      const done = (v) => { wrap.remove(); resolve(v); };
+      const single = okLabel === 'Понятно';
+      wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">
+        <div class="modal-box">
+          <p>${esc(text)}</p>
+          <button class="sheet-btn ${danger ? 'is-danger' : ''}" data-ans="1">${esc(okLabel)}</button>
+        </div>
+        ${single ? '' : '<button class="sheet-btn sheet-cancel" data-ans="0">Отмена</button>'}
+      </div>`;
+      const done = (v) => {
+        if (wrap.classList.contains('closing')) return;
+        wrap.classList.add('closing');
+        setTimeout(() => wrap.remove(), 220);
+        resolve(v);
+      };
       wrap.addEventListener('click', (e) => {
         e.stopPropagation();
         const b = e.target.closest('[data-ans]');
@@ -145,9 +152,25 @@
     await initLocal();
   }
 
+  // ТТК из учётной системы: добавляются на все устройства один раз.
+  // Карты, которые шеф правил, сохраняются; заменяются только старые версии с фото.
+  const ttkNeedsUpdate = (list) => !list.some((t) => t.id === 'x001') || list.some((t) => TTK_REPLACED_IDS.includes(t.id));
+  const OLD_TTK_CATEGORIES = ['Мясо и птица', 'Начинки для равиоли', 'Закуски и намазки', 'Овощи и гарниры'];
+  function mergeTtkDefaults(stored) {
+    const have = new Set(stored.map((t) => t.id));
+    const kept = stored.filter((t) => !TTK_REPLACED_IDS.includes(t.id))
+      .map((t) => (OLD_TTK_CATEGORIES.includes(t.category) ? { ...t, category: 'Полуфабрикаты' } : t));
+    return [...kept, ...DEFAULT_TTK.filter((d) => !have.has(d.id))];
+  }
+
   // Изменения пришли из общей базы (с другого устройства или своё подтверждение)
   let pendingRender = false;
   function onRemoteChange() {
+    if (Sync.status === 'online' && !state.ttkChecked) {
+      state.ttkChecked = true;
+      const ttk = load(KEY.ttk, []);
+      if (ttkNeedsUpdate(ttk)) save(KEY.ttk, mergeTtkDefaults(ttk));
+    }
     if (state.user) {
       const u = load(KEY.staff, []).find((x) => x.id === state.user.id);
       if (!u || u.disabled) { logout(); return; }
@@ -186,6 +209,7 @@
     // Удаляем примерные ТТК — ресторан загружает свои карты
     if ((load('bc_seed', 0) || 0) < 3) { save(KEY.ttk, []); save('bc_seed', 3); }
     // Загружаем ТТК ресторана (карты с кухни); вручную добавленные карты сохраняются
+    { const ttk = load(KEY.ttk, []); if (ttkNeedsUpdate(ttk)) save(KEY.ttk, mergeTtkDefaults(ttk)); }
     if ((load('bc_seed', 0) || 0) < 4) {
       const mine = load(KEY.ttk, []).filter((t) => !DEFAULT_TTK.some((d) => d.id === t.id));
       save(KEY.ttk, [...DEFAULT_TTK, ...mine]);
@@ -366,6 +390,51 @@
     go(st.view, st.params || {}, { fromHistory: true });
   });
 
+  // Свайп от левого края — «назад», как во всех приложениях iPhone. В Safari и Chrome этот жест
+  // уже есть у браузера, поэтому включаем свой только в приложении, установленном на экран «Домой».
+  const standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (standalone && 'ontouchstart' in window) {
+    let sw = null;
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      if (e.touches.length !== 1 || t.clientX > 24 || !state.user || navDepth < 1 || document.querySelector('.modal')) return;
+      const main = document.querySelector('#app > main');
+      if (main) sw = { x: t.clientX, y: t.clientY, t: Date.now(), main, dx: 0, lock: null, lastX: t.clientX, lastT: Date.now(), v: 0 };
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!sw) return;
+      const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+      if (sw.lock === null && Math.abs(dx) + Math.abs(dy) > 8) {
+        sw.lock = Math.abs(dx) > Math.abs(dy) * 1.2 && dx > 0;
+        if (!sw.lock) { sw = null; return; }
+        // анимация входа (fill: both) перекрывает transform — снимаем её
+        sw.main.classList.remove('enter-forward', 'enter-back', 'enter-tab');
+        sw.main.style.transition = 'none'; sw.main.style.willChange = 'transform';
+        sw.main.classList.add('swiping');
+      }
+      if (!sw.lock) return;
+      e.preventDefault();
+      const now = Date.now();
+      sw.v = (t.clientX - sw.lastX) / Math.max(1, now - sw.lastT); sw.lastX = t.clientX; sw.lastT = now;
+      sw.dx = Math.max(0, dx);
+      sw.main.style.transform = `translate3d(${sw.dx}px,0,0)`;
+    }, { passive: false });
+    const end = () => {
+      if (!sw) return;
+      const { main, dx, v, lock } = sw; sw = null;
+      if (!lock) return;
+      const w = window.innerWidth, done = dx > w * 0.33 || (v > 0.45 && dx > 30);
+      main.style.transition = `transform ${done ? 0.22 : 0.35}s cubic-bezier(.22,1,.36,1)`;
+      main.style.transform = done ? `translate3d(${w}px,0,0)` : '';
+      setTimeout(() => {
+        if (done) { if (navigator.vibrate) navigator.vibrate(8); history.back(); }
+        else { main.style.transition = ''; main.style.willChange = ''; main.classList.remove('swiping'); }
+      }, done ? 200 : 350);
+    };
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+  }
+
   // Кнопка «‹» в шапке: назад по истории, если есть куда, иначе на указанный экран
   function goBack(fallback) {
     if (navDepth > 0) history.back(); else go(fallback);
@@ -394,6 +463,8 @@
     const n = items.filter((i) => done[i.id]).length;
     return { n, total: items.length, pct: items.length ? Math.round((n / items.length) * 100) : 0 };
   }
+  // Какой чек-лист актуален сейчас: утром открытие, днём смена, вечером и ночью закрытие
+  const defaultType = () => { const hr = new Date().getHours(); return hr >= 21 || hr < 5 ? 'close' : hr >= 11 ? 'shift' : 'open'; };
   function stationProgress(station, date = workDay()) {
     let n = 0, total = 0;
     for (const t of CHECKLIST_TYPES) { const p = progress(station, t.id, date); n += p.n; total += p.total; }
@@ -445,41 +516,51 @@
     bolt: 'M13 2 4 14h7l-1 8 9-12h-7z',
     drop: 'M12 3s7 7 7 12a7 7 0 0 1-14 0c0-5 7-12 7-12z',
     firstaid: 'M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM8.5 7V4.5h7V7M12 10.5v6M9 13.5h6',
+    fish: 'M3 12c2.4-3.6 5.8-5.5 9.5-5.5S19 8.4 21 12c-2 3.6-4.8 5.5-8.5 5.5S5.4 15.6 3 12zM3 12 1 9.5M3 12l-2 2.5M16.5 10.8h.01',
+    leaf: 'M5 19c-.5-6.5 3.5-12.5 15-14-1 11.5-7.5 15.5-14 14.5zM5 19l7.5-7.5',
     cog: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1',
   };
   // Цвет плитки: у каждой станции и категории ТТК свой
   const STATION_TONE = { cold: 'sky', pasta: 'amber', grill: 'coral', pass: 'navy', pizza: 'rose', pastry: 'plum', chef: 'violet' };
   const CATEGORY_LOOK = {
-    'Завтраки': ['coffee', 'amber'], 'Соусы и заправки': ['pot', 'rose'], 'Супы и бульоны': ['soup', 'sky'],
-    'Мясо и птица': ['meat', 'coral'], 'Начинки для равиоли': ['pasta', 'plum'], 'Закуски и намазки': ['bread', 'teal'],
-    'Овощи и гарниры': ['carrot', 'green'],
+    'Завтраки': ['coffee', 'amber'], 'Салаты': ['leaf', 'green'], 'Закуски и антипасти': ['bread', 'teal'],
+    'Супы и бульоны': ['soup', 'sky'], 'Паста и равиоли': ['pasta', 'navy'], 'Пицца': ['pizza', 'rose'],
+    'Горячие блюда': ['flame', 'coral'], 'Детское меню': ['sun', 'violet'], 'Десерты': ['cake', 'plum'],
+    'Соусы и заправки': ['pot', 'rose'], 'Тесто и хлеб': ['bread', 'amber'], 'Рыба и морепродукты': ['fish', 'sky'],
+    'Полуфабрикаты': ['clipboard', 'navy'],
   };
+  // Разделы меню и разделы полуфабрикатов на экране ТТК
+  const MENU_CATEGORIES = ['Завтраки', 'Салаты', 'Закуски и антипасти', 'Супы и бульоны', 'Паста и равиоли', 'Пицца', 'Горячие блюда', 'Детское меню', 'Десерты'];
+  const plural = (n, [one, few, many]) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
   const tone = (stationId) => 'tone-' + (STATION_TONE[stationId] || 'navy');
   const ic = (name, size = 20) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] || ICONS.shield}"/></svg>`;
 
   /* ---------------- Компоненты ---------------- */
   const ring = (pct, size = 56) => {
     const r = size / 2 - 5, c = 2 * Math.PI * r;
-    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-label="${pct}%">
+    return `<svg class="ring${pct >= 100 ? ' full' : ''}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-label="${pct}%">
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ring-bg"/>
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ring-fg" stroke-dasharray="${c}" stroke-dashoffset="${c - (c * pct) / 100}"/>
       <text x="50%" y="50%" dy=".35em" text-anchor="middle">${pct}%</text></svg>`;
   };
 
+  // Шапка как в приложениях iPhone: на главных экранах — крупный заголовок, который при прокрутке
+  // уезжает в полупрозрачную шапку; на вложенных — «‹ Назад» и заголовок по центру
   const header = (title, back) => `
-    <div class="topbar-wrap">
+    <div class="topbar-wrap ${back ? 'is-detail' : 'is-root'}">
       <header class="topbar">
-        ${back ? `<button class="icon-btn" data-back="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
-        <h1>${title === 'Bella Ciao' ? '' : esc(title)}</h1>
+        <div class="nav-lead">${back ? `<button class="nav-back" data-back="${back}" aria-label="Назад">${ic('chevL', 24)}<span>Назад</span></button>` : '<div class="brand-mini" aria-label="Bella Ciao">Bella Ciao</div>'}</div>
+        <h1 class="nav-title">${esc(title)}</h1>
+        <div class="nav-trail">
         ${(() => {
-          const open = openShift(state.user.id);
+          const open = state.view !== 'home' && openShift(state.user.id);
           return open ? `<button class="shift-pill" data-go="home" aria-label="Вы на смене. Открыть главную">
             <i></i><span role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</span></button>` : '';
         })()}
-        <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
+        <button class="avatar ${tone(state.user.role === 'chef' ? 'chef' : state.user.station)}" data-go="profile" aria-label="Профиль: ${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
+        </div>
       </header>
-      <div class="ceramic-rule"></div>
-    </div>`;
+    </div>${back ? '' : `<!--LT:${esc(title)}-->`}`;
 
   const initials = (name) => name.split(/\s+/).filter((w) => /^[\p{L}]/u.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
@@ -491,8 +572,19 @@
       ['safety', 'shield', 'ТБ'],
     ];
     if (can.report()) items.push(['team', 'users', 'Команда']);
+    // Красные счётчики, как на iPhone: сколько пунктов осталось в текущем чек-листе своей станции
+    // и сколько разделов ТБ ещё не прочитано
+    const u = state.user;
+    const badges = {};
+    if (STATIONS.some((s) => s.id === u.station)) {
+      const p = progress(u.station, defaultType());
+      if (p.total > p.n) badges.checklists = p.total - p.n;
+    }
+    const acks = load(KEY.acks, {})[u.id] || {};
+    const unread = load(KEY.safety, []).filter((s) => (!s.stations.length || s.stations.includes(u.station) || can.allStations()) && !acks[s.id]).length;
+    if (unread) badges.safety = unread;
     return `<nav class="bottom-nav">${items.map(([v, i, l]) =>
-      `<button class="${state.view.startsWith(v) ? 'active' : ''}" data-go="${v}"><span class="ni">${ic(i, 22)}</span><span>${l}</span></button>`
+      `<button class="${state.view.startsWith(v) ? 'active' : ''}" data-go="${v}"${badges[v] ? ` aria-label="${l}, ${badges[v]}"` : ''}><span class="ni">${ic(i, 22)}${badges[v] ? `<b class="badge">${badges[v] > 99 ? '99+' : badges[v]}</b>` : ''}</span><span>${l}</span></button>`
     ).join('')}</nav>`;
   }
 
@@ -507,7 +599,7 @@
         <div class="eyebrow">${open ? 'Вы на смене' : 'Смена не начата'}</div>
         ${open
           ? `<div class="shift-timer" role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</div>
-             <small>Начало в ${fmtTime(open.start)} · ${fmtDate(open.start)}</small>`
+             <small>Начало в ${fmtTime(open.start)}${new Date(open.start).toDateString() === new Date().toDateString() ? '' : ' · ' + fmtDate(open.start)}</small>`
           : `<div class="shift-timer is-off">Не на смене</div><small>Отметьте приход, когда начинаете работу</small>`}
         <small class="shift-month">За этот месяц: <b>${fmtNum(hours(monthMs))} ч</b></small>
       </div>
@@ -587,18 +679,17 @@
     const mySafety = load(KEY.safety, []).filter((s) => !s.stations.length || s.stations.includes(u.station) || can.allStations());
     const unread = mySafety.filter((s) => !acks[s.id]).length;
 
-    return `${header('Bella Ciao')}
+    return `${header(greet)}
       <main class="page">
-        <section class="hero">
-          <div class="hero-greet">${greet}</div>
-          <div class="hero-name">${esc(u.name)}</div>
-          <div class="hero-meta">${ROLES[u.role].name} · ${esc(stationById(u.station).name)} · ${fmtDate(Date.now())}</div>
-        </section>
+        <p class="lt-sub">${esc(new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${esc(u.name.split(/\s+/)[0])}, ${esc(u.role === 'cook' ? stationById(u.station).name.toLowerCase() : ROLES[u.role].name.toLowerCase())}</p>
 
         ${shiftCard()}
         ${can.manageTeam() && Object.values(load(KEY.codes, {})).some((c) => c.isDefault)
           ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
-        ${unread ? `<div class="alert alert-olive" data-go="safety">${ic('shield', 18)}<span>Не прочитано разделов ТБ: <b>${unread}</b>. Ознакомьтесь и подтвердите.</span></div>` : ''}
+        ${unread ? `<div class="quick"><button class="card quick-card" data-go="safety">
+            <span class="q-ic tone-green">${ic('shield', 22)}</span>
+            <span class="q-t"><b>Техника безопасности</b><small>Нужно прочитать и подтвердить</small></span>
+            <span class="count-pill">${unread}</span>${ic('chevR', 18)}</button></div>` : ''}
 
         ${can.report() ? (() => {
           const staff = load(KEY.staff, []);
@@ -615,18 +706,12 @@
             const p = stationProgress(s.id);
             return `<button class="card station-card" data-go="checklists" data-station="${s.id}">
               <span class="st-icon ${tone(s.id)}">${ic(s.icon, 24)}</span>
-              <span class="st-body"><b>${esc(s.name)}</b><small>${p.total ? `${p.n} из ${p.total} пунктов` : 'Чек-лист не заполнен'}</small></span>
-              ${ring(p.pct)}
+              <span class="st-body"><b>${esc(s.name)}</b><small${p.total && p.n === p.total ? ' class="ok-t"' : ''}>${!p.total ? 'Пункты ещё не добавлены' : p.n === p.total ? 'Всё выполнено' : `Выполнено ${p.n} из ${p.total}`}</small></span>
+              ${p.total ? ring(p.pct) : `<span class="chev">${ic('chevR', 18)}</span>`}
             </button>`;
           }).join('')}
         </div>
 
-        <h2 class="section-title">Быстрый доступ</h2>
-        <div class="quick">
-          <button class="card quick-card" data-go="ttk"><span class="q-ic tone-plum">${ic('book', 22)}</span><span class="q-t"><b>ТТК</b><small>Технологические карты</small></span>${ic('chevR', 18)}</button>
-          <button class="card quick-card" data-go="safety"><span class="q-ic tone-green">${ic('shield', 22)}</span><span class="q-t"><b>Техника безопасности</b><small>Правила и инструкции</small></span>${ic('chevR', 18)}</button>
-          ${can.report() ? `<button class="card quick-card" data-go="team"><span class="q-ic tone-sky">${ic('clock', 22)}</span><span class="q-t"><b>Табель</b><small>Часы и оплата</small></span>${ic('chevR', 18)}</button>` : ''}
-        </div>
       </main>${nav()}`;
   }
 
@@ -634,8 +719,7 @@
     const stations = visibleStations();
     const st = state.params.station && stations.some((s) => s.id === state.params.station)
       ? state.params.station : (stations.find((s) => s.id === state.user.station) || stations[0]).id;
-    const hr = new Date().getHours();
-    const type = state.params.type || (hr >= 21 || hr < 5 ? 'close' : hr >= 11 ? 'shift' : 'open');
+    const type = state.params.type || defaultType();
     state.lastCl = { station: st, type, at: Date.now() };
     const items = (load(KEY.lists, {})[st] || {})[type] || [];
     const done = getChecks(workDay(), st, type);
@@ -650,16 +734,16 @@
         <div class="segmented">${CHECKLIST_TYPES.map((t) => {
           const tp = progress(st, t.id);
           return `<button class="${t.id === type ? 'on' : ''}" data-go="checklists" data-station="${st}" data-type="${t.id}">
-            <span class="seg-t">${ic(t.icon, 16)} ${t.name}</span><small>${tp.n}/${tp.total}</small></button>`;
+            <span class="seg-t">${{ open: 'Открытие', shift: 'Смена', close: 'Закрытие' }[t.id] || t.name}</span><small>${tp.total ? `${tp.n} из ${tp.total}` : '—'}</small></button>`;
         }).join('')}</div>
 
         <div class="list-head">
           <div>
             <div class="eyebrow">${esc(stationById(st).name)}</div>
             <h2>${CHECKLIST_TYPES.find((t) => t.id === type).name}</h2>
-            <div class="bar"><span style="width:${p.pct}%"></span></div>
+            <div class="list-sub${p.total && p.n === p.total ? ' ok-t' : ''}">${!p.total ? 'Пунктов пока нет' : p.n === p.total ? 'Всё выполнено' : `Осталось ${p.total - p.n} из ${p.total}`}</div>
           </div>
-          ${ring(p.pct, 64)}
+          ${p.total ? ring(p.pct, 64) : ''}
         </div>
 
         ${editing ? `<div class="edit-banner">${ic('edit', 18)}<span>Пункты для станции <b>${esc(stationById(st).name)}</b> · ${CHECKLIST_TYPES.find((t) => t.id === type).name}. Их увидят только повара этой станции.</span></div>` : ''}
@@ -721,51 +805,84 @@
     const digits = unit === 'кг' || unit === 'л' ? 3 : 1;
     return n.toLocaleString('ru-RU', { minimumFractionDigits: unit === 'кг' || unit === 'л' ? 3 : 0, maximumFractionDigits: digits });
   }
+  // Для чтения на кухне: 270 г вместо 0,270 кг; 1,5 кг остаётся в килограммах
+  function showQty(q, unit) {
+    const n = Number(q) || 0;
+    const nice = (v, d) => v.toLocaleString('ru-RU', { maximumFractionDigits: d });
+    if (unit === 'кг' && n < 1) return [nice(n * 1000, 1), 'г'];
+    if (unit === 'л' && n < 1) return [nice(n * 1000, 1), 'мл'];
+    if (unit === 'кг' || unit === 'л') return [nice(n, 3), unit];
+    return [nice(n, 2), unit];
+  }
+  // Поиск карты полуфабриката по названию ингредиента («ПФ Тесто для Пиццы» → его ТТК)
+  const ttkKey = (s) => String(s).toLowerCase().replace(/ё/g, 'е')
+    .replace(/\(new\)|new/g, ' ').replace(/(^|[^a-zа-я0-9])(пф|нетто)(?=[^a-zа-я0-9]|$)/g, '$1 ')
+    .replace(/[^a-zа-я0-9]/g, '');
   const ttkStationLabel = (t) => (t.station ? stationById(t.station).short : 'Все станции');
 
   function viewTtk() {
     const all = load(KEY.ttk, []);
-    const q = (state.params.q || '').toLowerCase();
+    const q = (state.params.q || '').trim().toLowerCase();
     const cat = state.params.cat || '';
     const st = state.params.station || '';
-    const cats = TTK_CATEGORIES.filter((c) => all.some((t) => t.category === c));
-    if (all.some((t) => !TTK_CATEGORIES.includes(t.category))) cats.push('Другое');
     const catOf = (t) => (TTK_CATEGORIES.includes(t.category) ? t.category : 'Другое');
-    const list = all
-      .filter((t) => !cat || catOf(t) === cat)
-      .filter((t) => !st || t.station === st || !t.station)
-      .filter((t) => !q || t.name.toLowerCase().includes(q) || t.ingredients.some((i) => String(i[0]).toLowerCase().includes(q)));
-    const groups = (cat ? [cat] : cats).map((c) => [c, list.filter((t) => catOf(t) === c)]).filter(([, l]) => l.length);
+    const cats = TTK_CATEGORIES.filter((c) => all.some((t) => t.category === c));
+    if (all.some((t) => catOf(t) === 'Другое')) cats.push('Другое');
+    const byStation = all.filter((t) => !st || t.station === st || !t.station);
+    const look = (c) => CATEGORY_LOOK[c] || ['book', 'navy'];
+    const card = (t) => `
+      <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
+        <span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>
+        <span class="ttk-body">
+          <b>${esc(t.name)}</b>
+          <small>${[t.kind === 'dish' ? '' : 'Полуфабрикат', t.station ? stationById(t.station).short : '', t.yield || ''].filter(Boolean).map(esc).join(' · ')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
+        </span>
+        <span class="chev">${ic('chevR', 18)}</span>
+      </button>`;
+    const byName = (a, b) => a.name.localeCompare(b.name, 'ru');
+
+    let body;
+    if (!all.length) {
+      body = `<div class="card empty-list">${ic('book', 32)}<b>Технологических карт пока нет</b>
+        <p class="muted">${can.editTtk() ? 'Добавьте первую карту кнопкой «+».' : 'Карты добавляет шеф-повар или су-шеф.'}</p></div>`;
+    } else if (q) {
+      // Поиск — по всем картам: названию и составу
+      const found = byStation.filter((t) => t.name.toLowerCase().includes(q) || t.ingredients.some((i) => String(i[0]).toLowerCase().includes(q)));
+      const groups = cats.map((c) => [c, found.filter((t) => catOf(t) === c).sort(byName)]).filter(([, l]) => l.length);
+      body = groups.length ? groups.map(([c, l]) => `<h2 class="section-title">${esc(c)} · ${l.length}</h2><div class="ttk-list">${l.map(card).join('')}</div>`).join('')
+        : `<p class="empty">Ничего не найдено по запросу «${esc(state.params.q)}»</p>`;
+    } else if (cat) {
+      const l = byStation.filter((t) => catOf(t) === cat).sort((a, b) => (a.kind === b.kind ? byName(a, b) : a.kind === 'dish' ? -1 : 1));
+      body = `<h2 class="section-title">${esc(cat)} · ${l.length}</h2><div class="ttk-list">${l.map(card).join('') || '<p class="empty">Для этой станции карт нет</p>'}</div>`;
+    } else {
+      // Главный экран ТТК — плитки разделов
+      const tile = (c) => {
+        const n = byStation.filter((t) => catOf(t) === c).length;
+        return n ? `<button class="card cat-tile" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
+          <span class="ttk-st tone-${look(c)[1]}">${ic(look(c)[0], 24)}</span>
+          <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>` : '';
+      };
+      const menu = cats.filter((c) => MENU_CATEGORIES.includes(c)).map(tile).join('');
+      const pf = cats.filter((c) => !MENU_CATEGORIES.includes(c)).map(tile).join('');
+      body = `${menu ? `<h2 class="section-title">Блюда меню</h2><div class="cat-grid">${menu}</div>` : ''}
+        ${pf ? `<h2 class="section-title">Полуфабрикаты</h2><div class="cat-grid">${pf}</div>` : ''}
+        <button class="card storage-link" data-go="ttk-storage">${ic('clock', 20)}<span><b>Сроки хранения ПФ</b><small>Срок, температура и тара</small></span>${ic('chevR', 18)}</button>`;
+    }
 
     return `${header('ТТК')}
       <main class="page">
         <div class="search">
-          <input type="search" id="ttk-search" placeholder="Поиск блюда или ингредиента…" value="${esc(state.params.q || '')}"/>
+          <input type="search" id="ttk-search" placeholder="Блюдо или продукт" value="${esc(state.params.q || '')}" enterkeyhint="search" autocomplete="off"/>
         </div>
-        <div class="chips">
-          <button class="chip ${!cat ? 'on' : ''}" data-go="ttk" data-cat="" data-station="${st}">Все · ${all.length}</button>
+        ${cat || q ? `<div class="chips">
+          <button class="chip ${!cat ? 'on' : ''}" data-go="ttk" data-cat="" data-station="${st}">Все разделы</button>
           ${cats.map((c) => `<button class="chip ${c === cat ? 'on' : ''}" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">${esc(c)}</button>`).join('')}
-        </div>
+        </div>` : ''}
         <div class="chips chips-sm">
           <button class="chip ${!st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="">Все станции</button>
-          ${STATIONS.map((s) => `<button class="chip ${s.id === st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="${s.id}">${ic(s.icon, 14)} ${esc(s.short)}</button>`).join('')}
+          ${STATIONS.map((x) => `<button class="chip ${x.id === st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="${x.id}">${ic(x.icon, 14)} ${esc(x.short)}</button>`).join('')}
         </div>
-        <button class="card storage-link" data-go="ttk-storage">${ic('clock', 20)}<span><b>Сроки хранения ПФ</b><small>Срок, температура и тара</small></span>${ic('chevR', 18)}</button>
-        ${groups.map(([c, l]) => `
-          <h2 class="section-title">${esc(c)} · ${l.length}</h2>
-          <div class="ttk-list">
-            ${l.map((t) => `
-              <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-                <span class="ttk-st tone-${(CATEGORY_LOOK[t.category] || ['book', 'navy'])[1]}">${ic((CATEGORY_LOOK[t.category] || ['book'])[0], 22)}</span>
-                <span class="ttk-body">
-                  <b>${esc(t.name)}</b>
-                  <small>${t.kind === 'dish' ? 'Блюдо' : 'ПФ'}${t.station ? ' · ' + esc(stationById(t.station).short) : ''} · ${esc(t.yield || '—')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
-                </span>
-                <span class="chev">${ic('chevR', 18)}</span>
-              </button>`).join('')}
-          </div>`).join('') || (all.length ? '<p class="empty">Ничего не найдено</p>'
-            : `<div class="card empty-list">${ic('book', 32)}<b>Технологических карт пока нет</b>
-                <p class="muted">${can.editTtk() ? 'Добавьте первую карту кнопкой «+».' : 'Карты добавляет шеф-повар или су-шеф.'}</p></div>`)}
+        ${body}
         ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">${ic('plus', 26)}</button>` : ''}
       </main>${nav()}`;
   }
@@ -784,8 +901,10 @@
   }
 
   function viewTtkDetail() {
-    const t = load(KEY.ttk, []).find((x) => x.id === state.params.id);
+    const allTtk = load(KEY.ttk, []);
+    const t = allTtk.find((x) => x.id === state.params.id);
     if (!t) return viewTtk();
+    const pfIndex = new Map(allTtk.filter((x) => x.kind === 'pf').map((x) => [ttkKey(x.name), x.id]));
     const k = Number(state.params.k || 1);
     const isDish = t.kind === 'dish';
     const tech = (t.tech || []).filter(Boolean);
@@ -793,7 +912,8 @@
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
-        <div class="eyebrow">${esc(t.category || '')} · ${esc(ttkStationLabel(t))}</div>
+        <div class="eyebrow">${esc([t.category, t.station ? stationById(t.station).short : 'Все станции']
+          .filter((x, i, a) => x && a.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(' · '))}</div>
         <h2 class="dish">${esc(t.name)}</h2>
         <div class="meta-row">
           <span>Выход: <b>${esc(t.yield || '—')}</b>${k > 1 ? ` × ${k}` : ''}</span>
@@ -802,17 +922,27 @@
         ${t.note ? `<div class="alert">${ic('alert', 18)}<span>${esc(t.note)}</span></div>` : ''}
 
         <div class="scaler">
-          <span>${isDish ? 'Порций' : 'Замесов'}:</span>
-          <button class="icon-btn" data-scale="-1" aria-label="Меньше">${ic('minus', 18)}</button>
-          <b>${k}</b>
-          <button class="icon-btn" data-scale="1" aria-label="Больше">${ic('plus', 18)}</button>
-          ${[2, 5, 10].map((n) => `<button class="chip ${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}
+          <div class="scaler-row">
+            <span class="scaler-l">${isDish ? 'Порций' : 'Замесов'}</span>
+            <span class="stepper">
+              <button data-scale="-1" aria-label="Меньше" ${k <= 1 ? 'disabled' : ''}>${ic('minus', 18)}</button>
+              <b aria-live="polite">${k}</b>
+              <button data-scale="1" aria-label="Больше">${ic('plus', 18)}</button>
+            </span>
+          </div>
+          <div class="segmented seg-sm">${[1, 2, 5, 10].map((n) => `<button class="${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}</div>
         </div>
 
         <h3>Ингредиенты ${k > 1 ? `<small class="muted">· пересчитано на ×${k}</small>` : ''}</h3>
         <table class="ing">
           <thead><tr><th>Продукт</th><th>Кол-во</th><th>Ед.</th></tr></thead>
-          <tbody>${t.ingredients.map((i) => `<tr><td>${esc(i[0])}</td><td>${fmtQty(i[1] * k, ingUnit(i))}</td><td class="unit">${esc(ingUnit(i))}</td></tr>`).join('')}</tbody>
+          <tbody>${t.ingredients.map((i) => {
+            const [qv, qu] = showQty(i[1] * k, ingUnit(i));
+            const pf = /^пф/i.test(String(i[0])) ? pfIndex.get(ttkKey(i[0])) : null;
+            const name = pf && pf !== t.id
+              ? `<button class="ing-link" data-go="ttk-view" data-id="${pf}">${esc(i[0])}${ic('chevR', 14)}</button>` : esc(i[0]);
+            return `<tr><td>${name}</td><td>${qv}</td><td class="unit">${qu}</td></tr>`;
+          }).join('')}</tbody>
         </table>
 
         <h3>Технология приготовления</h3>
@@ -873,7 +1003,7 @@
     const all = load(KEY.safety, []);
     const mine = all.filter((s) => !s.stations.length || s.stations.includes(state.user.station) || can.allStations());
     const open = state.params.open;
-    return `${header('Техника безопасности')}
+    return `${header('Безопасность')}
       <main class="page">
         <p class="lead">Ознакомьтесь с каждым разделом и подтвердите. Подтверждения видит шеф-повар.</p>
         <div class="acc">
@@ -1181,10 +1311,24 @@
   }
 
   // «Экран» — это раздел (и карточка/сотрудник/смена для экранов-подробностей); фильтры и вкладки — тот же экран
-  const screenOf = (view, p = {}) => (['ttk-view', 'ttk-edit', 'member', 'shift-edit'].includes(view) ? view + ':' + (p.id || '') : view);
+  const screenOf = (view, p = {}) => (['ttk-view', 'ttk-edit', 'member', 'shift-edit'].includes(view) ? view + ':' + (p.id || '')
+    : view === 'ttk' && p.cat ? 'ttk:cat' : view); // плитки разделов ТТК и список раздела — разные экраны
 
   let lastScreen = null;
   let lastHtml = '';
+  // Галочка «рисуется» и кружок пружинит — только в момент отметки, не при каждом открытии экрана
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function animateCheck(id) {
+    if (reduceMotion.matches) return;
+    const box = document.querySelector(`[data-check="${CSS.escape(id)}"] .box`);
+    const path = box?.querySelector('path');
+    if (!box?.animate || !path) return;
+    box.animate([{ transform: 'scale(.78)' }, { transform: 'scale(1.16)', offset: .55 }, { transform: 'scale(1.06)' }],
+      { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' });
+    path.animate([{ strokeDasharray: 24, strokeDashoffset: 24 }, { strokeDasharray: 24, strokeDashoffset: 0 }],
+      { duration: 300, delay: 40, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'backwards' });
+  }
+
   function render() {
     const app = $('#app');
     if (!state.user) {
@@ -1207,6 +1351,7 @@
     renderMemo = new Map();
     let html;
     try { html = (VIEWS[state.view] || viewHome)(); } finally { renderMemo = null; }
+    html = html.replace(/<!--LT:([\s\S]*?)-->\s*<main class="page([^"]*)">/, (m, t, cls) => `<main class="page${cls}"><h1 class="large-title">${t}</h1>`);
     if (screen === lastScreen) {
       if (html !== lastHtml) patch(app, html);
     } else {
@@ -1220,7 +1365,21 @@
     }
     state.navDir = null;
     lastScreen = screen; lastHtml = html;
+    updateScrollState();
   }
+  // Крупный заголовок уезжает в шапку при прокрутке (как в iOS)
+  let scrollTick = false;
+  function updateScrollState() {
+    const y = window.scrollY;
+    document.body.classList.toggle('scrolled', y > 2);
+    document.body.classList.toggle('title-in', y > 36);
+  }
+  window.addEventListener('scroll', () => {
+    if (scrollTick) return;
+    scrollTick = true;
+    requestAnimationFrame(() => { scrollTick = false; updateScrollState(); });
+  }, { passive: true });
+
   function patch(app, html) {
     const t = document.createElement('template');
     t.innerHTML = html;
@@ -1276,6 +1435,7 @@
       toggleCheck(d.station, d.type, d.check);
       if (navigator.vibrate) navigator.vibrate(15);
       render();
+      animateCheck(d.check);
       return;
     }
     if (d.scale || d.scaleSet) {

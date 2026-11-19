@@ -5,11 +5,12 @@
    применяется при следующем открытии.
    Запросы к самой базе (firestore/googleapis) не перехватываются: у Firebase
    свой офлайн-режим, а кэширование его потоковых ответов ломало бы обновления. */
-const CACHE = 'bellaciao-v18';
+const CACHE = 'bellaciao-v22';
 const ASSETS = [
   './', './index.html', './css/styles.css', './js/data.js', './js/ttk-data.js',
   './js/firebase-config.js', './js/firebase-db.js', './js/sync.js', './js/app.js',
   './manifest.json', './icons/icon.svg',
+  './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png',
 ];
 const CACHEABLE_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com'];
 
