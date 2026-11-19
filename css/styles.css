@@ -688,3 +688,21 @@ main { will-change: auto; backface-visibility: hidden; }
   .btn-danger:hover { background: var(--danger); }
   .btn-dark:hover { background: var(--ink); }
 }
+
+/* ---------- ТТК: плитки разделов, переходы к картам ПФ ---------- */
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.cat-tile { display: flex; align-items: center; gap: 12px; padding: 12px; min-height: 72px; }
+.cat-tile .ttk-st { width: 44px; height: 44px; }
+.cat-t { display: flex; flex-direction: column; min-width: 0; }
+.cat-t b { font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.cat-t small { color: var(--ink-2); font-size: 13px; }
+@media (max-width: 360px) { .cat-grid { grid-template-columns: 1fr; } }
+.ing-link { display: inline-flex; align-items: center; gap: 4px; padding: 0; text-align: left; color: var(--cobalt); font-weight: 600; text-decoration: underline; text-decoration-color: rgba(31, 78, 156, .3); text-underline-offset: 3px; }
+.ing-link .ic { flex: none; opacity: .7; }
+.ing td:first-child { overflow-wrap: anywhere; }
+/* Плитки: слова не рвутся посередине — помещаются или переносятся по слогам */
+.cat-tile { gap: 10px; padding: 12px 10px; }
+.cat-tile .ttk-st { width: 40px; height: 40px; border-radius: 11px; }
+.cat-t b { font-size: 15px; overflow-wrap: normal; word-break: normal; hyphens: auto; -webkit-hyphens: auto; }
+.ing-link { display: inline; }
+.ing-link .ic { display: inline-block; vertical-align: -2px; margin-left: 2px; }
