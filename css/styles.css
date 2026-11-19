@@ -221,6 +221,10 @@ button.avatar:active { transform: scale(.92); transition-duration: .08s; }
 .ring { flex: none; }
 .ring-bg { fill: none; stroke: var(--tint-soft); stroke-width: 5; }
 .ring-fg { fill: none; stroke: var(--tint); stroke-width: 5; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset .6s var(--spring); }
+.ring.full .ring-fg { stroke: var(--green-fill); }
+.ring.full .ring-bg { stroke: var(--green-soft); }
+.ring.full text { fill: var(--green); }
+.ring-fg { transition: stroke-dashoffset .6s var(--spring), stroke .3s ease; }
 .ring text { font-size: 11px; font-weight: 700; fill: var(--label); font-family: var(--font); font-variant-numeric: tabular-nums; }
 .bar { height: 6px; background: var(--fill); border-radius: 3px; overflow: hidden; margin-top: 10px; }
 .bar span { display: block; height: 100%; background: var(--tint); border-radius: 3px; transition: width .6s var(--spring); }
@@ -359,6 +363,7 @@ button.avatar:active { transform: scale(.92); transition-duration: .08s; }
   display: grid; place-items: center; color: #fff; transition: background-color .2s ease, border-color .2s ease, transform .35s var(--spring);
 }
 .check-row .box .ic { width: 15px; height: 15px; stroke-width: 3; }
+
 .check-row .txt { flex: 1; min-width: 0; transition: color .2s ease; overflow-wrap: anywhere; }
 .check-row small { display: block; color: var(--label-2); font-size: 14px; margin-top: 3px; }
 .checklist li.done .box { background: var(--tint); border-color: var(--tint); transform: scale(1.06); }
@@ -496,7 +501,12 @@ h2.section-title + .ts-table { border-radius: var(--r); background: var(--bg-2);
   font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--label-2); transition: transform .3s var(--spring);
 }
 .bottom-nav button:active { transform: scale(.9); transition-duration: .08s; }
-.bottom-nav .ni { display: grid; place-items: center; height: 28px; }
+.bottom-nav .ni { display: grid; place-items: center; height: 28px; position: relative; }
+.bottom-nav .badge {
+  position: absolute; top: -3px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--red-fill); color: #fff; font-size: 12px; font-weight: 600; line-height: 18px; text-align: center;
+  font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--bg);
+}
 .bottom-nav .ni .ic { width: 26px; height: 26px; }
 .bottom-nav button.active { color: var(--tint); font-weight: 600; }
 .bottom-nav button.active .ic { stroke-width: 2.2; }
@@ -536,6 +546,7 @@ h2.section-title + .ts-table { border-radius: var(--r); background: var(--bg-2);
 /* ---------- Переходы между экранами (пружина iOS) ---------- */
 main.enter-forward { animation: push-in .42s var(--spring) both; }
 main.enter-back { animation: pop-in .42s var(--spring) both; }
+main.swiping { box-shadow: -10px 0 30px rgba(0,0,0,.14); }
 main.enter-tab { animation: tab-in .22s ease-out both; }
 @keyframes push-in { from { opacity: 0; transform: translate3d(36%, 0, 0); } to { opacity: 1; transform: none; } }
 @keyframes pop-in { from { opacity: 0; transform: translate3d(-24%, 0, 0); } to { opacity: 1; transform: none; } }

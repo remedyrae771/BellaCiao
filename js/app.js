@@ -390,6 +390,51 @@
     go(st.view, st.params || {}, { fromHistory: true });
   });
 
+  // Свайп от левого края — «назад», как во всех приложениях iPhone. В Safari и Chrome этот жест
+  // уже есть у браузера, поэтому включаем свой только в приложении, установленном на экран «Домой».
+  const standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (standalone && 'ontouchstart' in window) {
+    let sw = null;
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      if (e.touches.length !== 1 || t.clientX > 24 || !state.user || navDepth < 1 || document.querySelector('.modal')) return;
+      const main = document.querySelector('#app > main');
+      if (main) sw = { x: t.clientX, y: t.clientY, t: Date.now(), main, dx: 0, lock: null, lastX: t.clientX, lastT: Date.now(), v: 0 };
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!sw) return;
+      const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+      if (sw.lock === null && Math.abs(dx) + Math.abs(dy) > 8) {
+        sw.lock = Math.abs(dx) > Math.abs(dy) * 1.2 && dx > 0;
+        if (!sw.lock) { sw = null; return; }
+        // анимация входа (fill: both) перекрывает transform — снимаем её
+        sw.main.classList.remove('enter-forward', 'enter-back', 'enter-tab');
+        sw.main.style.transition = 'none'; sw.main.style.willChange = 'transform';
+        sw.main.classList.add('swiping');
+      }
+      if (!sw.lock) return;
+      e.preventDefault();
+      const now = Date.now();
+      sw.v = (t.clientX - sw.lastX) / Math.max(1, now - sw.lastT); sw.lastX = t.clientX; sw.lastT = now;
+      sw.dx = Math.max(0, dx);
+      sw.main.style.transform = `translate3d(${sw.dx}px,0,0)`;
+    }, { passive: false });
+    const end = () => {
+      if (!sw) return;
+      const { main, dx, v, lock } = sw; sw = null;
+      if (!lock) return;
+      const w = window.innerWidth, done = dx > w * 0.33 || (v > 0.45 && dx > 30);
+      main.style.transition = `transform ${done ? 0.22 : 0.35}s cubic-bezier(.22,1,.36,1)`;
+      main.style.transform = done ? `translate3d(${w}px,0,0)` : '';
+      setTimeout(() => {
+        if (done) { if (navigator.vibrate) navigator.vibrate(8); history.back(); }
+        else { main.style.transition = ''; main.style.willChange = ''; main.classList.remove('swiping'); }
+      }, done ? 200 : 350);
+    };
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+  }
+
   // Кнопка «‹» в шапке: назад по истории, если есть куда, иначе на указанный экран
   function goBack(fallback) {
     if (navDepth > 0) history.back(); else go(fallback);
@@ -418,6 +463,8 @@
     const n = items.filter((i) => done[i.id]).length;
     return { n, total: items.length, pct: items.length ? Math.round((n / items.length) * 100) : 0 };
   }
+  // Какой чек-лист актуален сейчас: утром открытие, днём смена, вечером и ночью закрытие
+  const defaultType = () => { const hr = new Date().getHours(); return hr >= 21 || hr < 5 ? 'close' : hr >= 11 ? 'shift' : 'open'; };
   function stationProgress(station, date = workDay()) {
     let n = 0, total = 0;
     for (const t of CHECKLIST_TYPES) { const p = progress(station, t.id, date); n += p.n; total += p.total; }
@@ -491,7 +538,7 @@
   /* ---------------- Компоненты ---------------- */
   const ring = (pct, size = 56) => {
     const r = size / 2 - 5, c = 2 * Math.PI * r;
-    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-label="${pct}%">
+    return `<svg class="ring${pct >= 100 ? ' full' : ''}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-label="${pct}%">
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ring-bg"/>
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ring-fg" stroke-dasharray="${c}" stroke-dashoffset="${c - (c * pct) / 100}"/>
       <text x="50%" y="50%" dy=".35em" text-anchor="middle">${pct}%</text></svg>`;
@@ -525,8 +572,19 @@
       ['safety', 'shield', 'ТБ'],
     ];
     if (can.report()) items.push(['team', 'users', 'Команда']);
+    // Красные счётчики, как на iPhone: сколько пунктов осталось в текущем чек-листе своей станции
+    // и сколько разделов ТБ ещё не прочитано
+    const u = state.user;
+    const badges = {};
+    if (STATIONS.some((s) => s.id === u.station)) {
+      const p = progress(u.station, defaultType());
+      if (p.total > p.n) badges.checklists = p.total - p.n;
+    }
+    const acks = load(KEY.acks, {})[u.id] || {};
+    const unread = load(KEY.safety, []).filter((s) => (!s.stations.length || s.stations.includes(u.station) || can.allStations()) && !acks[s.id]).length;
+    if (unread) badges.safety = unread;
     return `<nav class="bottom-nav">${items.map(([v, i, l]) =>
-      `<button class="${state.view.startsWith(v) ? 'active' : ''}" data-go="${v}"><span class="ni">${ic(i, 22)}</span><span>${l}</span></button>`
+      `<button class="${state.view.startsWith(v) ? 'active' : ''}" data-go="${v}"${badges[v] ? ` aria-label="${l}, ${badges[v]}"` : ''}><span class="ni">${ic(i, 22)}${badges[v] ? `<b class="badge">${badges[v] > 99 ? '99+' : badges[v]}</b>` : ''}</span><span>${l}</span></button>`
     ).join('')}</nav>`;
   }
 
@@ -671,8 +729,7 @@
     const stations = visibleStations();
     const st = state.params.station && stations.some((s) => s.id === state.params.station)
       ? state.params.station : (stations.find((s) => s.id === state.user.station) || stations[0]).id;
-    const hr = new Date().getHours();
-    const type = state.params.type || (hr >= 21 || hr < 5 ? 'close' : hr >= 11 ? 'shift' : 'open');
+    const type = state.params.type || defaultType();
     state.lastCl = { station: st, type, at: Date.now() };
     const items = (load(KEY.lists, {})[st] || {})[type] || [];
     const done = getChecks(workDay(), st, type);
@@ -1265,6 +1322,19 @@
 
   let lastScreen = null;
   let lastHtml = '';
+  // Галочка «рисуется» и кружок пружинит — только в момент отметки, не при каждом открытии экрана
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function animateCheck(id) {
+    if (reduceMotion.matches) return;
+    const box = document.querySelector(`[data-check="${CSS.escape(id)}"] .box`);
+    const path = box?.querySelector('path');
+    if (!box?.animate || !path) return;
+    box.animate([{ transform: 'scale(.78)' }, { transform: 'scale(1.16)', offset: .55 }, { transform: 'scale(1.06)' }],
+      { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' });
+    path.animate([{ strokeDasharray: 24, strokeDashoffset: 24 }, { strokeDasharray: 24, strokeDashoffset: 0 }],
+      { duration: 300, delay: 40, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'backwards' });
+  }
+
   function render() {
     const app = $('#app');
     if (!state.user) {
@@ -1371,6 +1441,7 @@
       toggleCheck(d.station, d.type, d.check);
       if (navigator.vibrate) navigator.vibrate(15);
       render();
+      animateCheck(d.check);
       return;
     }
     if (d.scale || d.scaleSet) {
