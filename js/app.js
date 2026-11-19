@@ -289,7 +289,7 @@
     const pin = state.pin;
     const h = await hashPin(pin);
     const codes = load(KEY.codes, {});
-    const group = Object.keys(codes).find((g) => codes[g].hash === h);
+    const group = LOGIN_GROUPS.find((g) => codes[g] && codes[g].hash === h);
     if (group) {
       state.group = group; state.pin = ''; state.failed = 0;
       render();
@@ -310,10 +310,12 @@
     }
   }
 
-  // Сотрудники, которых можно выбрать после ввода кода станции
+  // Приложением пользуются только руководители кухни: шеф-повар (свой код) и су-шефы (код раздачи).
+  // Повара не входят — их приход и уход отмечают шеф или су-шеф в разделе «Команда».
+  const LOGIN_GROUPS = ['chef', 'pass'];
   function groupMembers(group) {
     return load(KEY.staff, []).filter((u) => !u.disabled &&
-      (group === 'chef' ? u.role === 'chef' : u.station === group && u.role !== 'chef'));
+      (group === 'chef' ? u.role === 'chef' : group === 'pass' ? u.role === 'sous' : false));
   }
 
   function pickUser(id) {
@@ -331,21 +333,23 @@
   const allShifts = () => load(KEY.shifts, []);
   const openShift = (userId) => allShifts().find((s) => s.uid === userId && !s.end);
 
-  function clockIn() {
-    if (openShift(state.user.id)) return;
+  function clockIn(who = state.user) {
+    if (openShift(who.id)) return;
     const shifts = allShifts();
-    shifts.push({ id: 's' + uid(), uid: state.user.id, start: Date.now(), end: null, station: state.user.station });
+    shifts.push({ id: 's' + uid(), uid: who.id, start: Date.now(), end: null, station: who.station,
+      ...(who.id !== state.user.id ? { by: state.user.name } : {}) });
     save(KEY.shifts, shifts);
-    toast(`Смена начата в ${fmtTime(Date.now())}`);
+    toast(who.id === state.user.id ? `Смена начата в ${fmtTime(Date.now())}` : `${who.name.split(/\s+/)[0]}: приход в ${fmtTime(Date.now())}`);
   }
 
-  function clockOut() {
+  function clockOut(who = state.user) {
     const shifts = allShifts();
-    const s = shifts.find((x) => x.uid === state.user.id && !x.end);
+    const s = shifts.find((x) => x.uid === who.id && !x.end);
     if (!s) return;
     s.end = Date.now();
+    if (who.id !== state.user.id) s.endBy = state.user.name;
     save(KEY.shifts, shifts);
-    toast(`Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}`);
+    toast(who.id === state.user.id ? `Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}` : `${who.name.split(/\s+/)[0]}: уход, отработано ${fmtDur(s.end - s.start)}`);
   }
 
   // Смены, начавшиеся в периоде [from, to] (даты 'YYYY-MM-DD' включительно)
@@ -374,7 +378,7 @@
     if (!opts.fromHistory) {
       try {
         // Фильтры и вкладки внутри экрана не копятся в истории «Назад»
-        if (sameScreen) history.replaceState({ bc: true, view, params, depth: navDepth }, '');
+        if (sameScreen || opts.replace) history.replaceState({ bc: true, view, params, depth: navDepth }, '');
         else { history.pushState({ bc: true, view, params, depth: navDepth + 1 }, ''); navDepth++; }
       } catch { /* история недоступна */ }
     }
@@ -382,11 +386,31 @@
     if (!sameScreen) window.scrollTo(0, opts.fromHistory ? (scrollMemory[viewKeyOf(view, params)] || 0) : 0);
   }
 
+  // Вкладки внизу — как в приложениях iPhone: переключение вкладки не добавляет шаг в «Назад».
+  // В истории остаются только главная и путь внутри текущей вкладки, поэтому жест «назад»
+  // никогда не перекидывает на другую вкладку (например, из ТТК в чек-листы).
+  let pendingTab = null;
+  function goTab(view, params) {
+    if (navDepth > 1 || (view === 'home' && navDepth > 0)) {
+      // сначала сворачиваем историю до главной (или до первой вкладки), потом показываем нужную
+      pendingTab = { view, params };
+      try { history.go(-(view === 'home' ? navDepth : navDepth - 1)); return; } catch { pendingTab = null; }
+    }
+    if (view === 'home') { go('home', params, { tab: true }); return; }
+    go(view, params, { tab: true, replace: navDepth === 1 });
+  }
+
   window.addEventListener('popstate', (e) => {
     if (!state.user) return;
     const st = e.state && e.state.bc ? e.state : { view: 'home', params: {}, depth: 0 };
     navDepth = st.depth || 0;
     document.querySelector('.modal')?.remove();
+    if (pendingTab) {
+      const t = pendingTab; pendingTab = null;
+      if (t.view === 'home') go('home', t.params, { tab: true, replace: true });
+      else go(t.view, t.params, { tab: true, replace: navDepth >= 1 });
+      return;
+    }
     go(st.view, st.params || {}, { fromHistory: true });
   });
 
@@ -398,6 +422,8 @@
     document.addEventListener('touchstart', (e) => {
       const t = e.touches[0];
       if (e.touches.length !== 1 || t.clientX > 24 || !state.user || navDepth < 1 || document.querySelector('.modal')) return;
+      const strip = e.target.closest?.('.chips, .table-wrap');
+      if (strip && strip.scrollLeft > 0) return; // это прокрутка ленты, а не «назад»
       const main = document.querySelector('#app > main');
       if (main) sw = { x: t.clientX, y: t.clientY, t: Date.now(), main, dx: 0, lock: null, lastX: t.clientX, lastT: Date.now(), v: 0 };
     }, { passive: true });
@@ -657,7 +683,7 @@
             : state.loginError ? state.loginError
             : Sync.status === 'loading' ? 'Подключаемся к базе…'
             : Sync.status === 'offline' ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
-            : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
+            : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код руководителя'}</p>
           <div class="pin-dots" aria-label="Введено цифр: ${state.pin.length} из 4">${dots}</div>
           <div class="keypad">
             ${keys.map((k) => k === ''
@@ -684,8 +710,8 @@
         <p class="lt-sub">${esc(new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${esc(u.name.split(/\s+/)[0])}, ${esc(u.role === 'cook' ? stationById(u.station).name.toLowerCase() : ROLES[u.role].name.toLowerCase())}</p>
 
         ${shiftCard()}
-        ${can.manageTeam() && Object.values(load(KEY.codes, {})).some((c) => c.isDefault)
-          ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
+        ${can.manageTeam() && LOGIN_GROUPS.some((g) => load(KEY.codes, {})[g]?.isDefault)
+          ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Стандартные коды входа ещё не сменены. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
         ${unread ? `<div class="quick"><button class="card quick-card" data-go="safety">
             <span class="q-ic tone-green">${ic('shield', 22)}</span>
             <span class="q-t"><b>Техника безопасности</b><small>Нужно прочитать и подтвердить</small></span>
@@ -1110,7 +1136,26 @@
     }).filter((r) => r.list.length);
     const totalH = rows.reduce((a, r) => a + r.h, 0), totalSum = rows.reduce((a, r) => a + r.sum, 0);
 
-    return `
+    // Приход и уход поваров отмечает руководитель: повара в приложение не входят
+    const crew = staff.filter((u) => !u.disabled && u.id !== state.user.id);
+    const attendance = `
+      <h2 class="section-title">Приход и уход</h2>
+      <div class="team-list attend">
+        ${crew.map((u) => {
+          const o = openShift(u.id);
+          return `<div class="member attend-row">
+            <span class="avatar lg ${tone(u.role === 'chef' ? 'chef' : u.station)}">${esc(initials(u.name))}</span>
+            <span class="m-body"><b>${esc(u.name)}</b><small>${o
+              ? `<span class="on-shift">на смене</span> · с ${fmtTime(o.start)} · <span data-since="${o.start}" data-fmt="short">${fmtClock(Date.now() - o.start, false)}</span>`
+              : `${u.role === 'cook' ? esc(stationById(u.station).short) : ROLES[u.role].name}`}</small></span>
+            ${o ? `<button class="btn btn-sm btn-out" data-clock="out" data-uid="${u.id}">Ушёл</button>`
+                : `<button class="btn btn-sm" data-clock="in" data-uid="${u.id}">Пришёл</button>`}
+          </div>`;
+        }).join('') || '<p class="empty">Добавьте сотрудников во вкладке «Люди»</p>'}
+      </div>
+      <h2 class="section-title">Табель</h2>`;
+
+    return `${attendance}
       <div class="card now-card">
         <div class="eyebrow">Сейчас на смене · ${onShift.length}</div>
         ${onShift.length ? `<ul class="now-list">${onShift.map((s) => `<li>
@@ -1166,10 +1211,10 @@
   // Коды входа станций (только шеф)
   function codesTab() {
     const codes = load(KEY.codes, {});
-    const groups = [...STATIONS, CHEF_GROUP];
+    const groups = [CHEF_GROUP, { ...stationById('pass'), name: 'Су-шефы' }];
     return `
-      <p class="lead">У каждой станции свой код. После ввода кода сотрудник выбирает себя из списка поваров этой станции.
-        Сами повара коды менять не могут.</p>
+      <p class="lead">В приложение входят только шеф-повар и су-шефы. После ввода кода нужно выбрать себя из списка.
+        Повара не входят: их приход и уход отмечает руководитель во вкладке «Табель».</p>
       <div class="codes">
         ${groups.map((g) => `
           <form class="card code-row" data-form="code" data-group="${g.id}">
@@ -1419,8 +1464,10 @@
     if (d.pick) { pickUser(d.pick); return; }
     if (el.hasAttribute('data-cancel-pick')) { state.group = null; render(); return; }
     if (d.clock) {
-      if (d.clock === 'in') clockIn();
-      else if (await ask('Закончить смену сейчас?', 'Закончить')) clockOut();
+      const who = d.uid ? load(KEY.staff, []).find((u) => u.id === d.uid) : state.user;
+      if (!who || (who.id !== state.user.id && !can.report())) return;
+      if (d.clock === 'in') clockIn(who);
+      else if (await ask(who.id === state.user.id ? 'Закончить смену сейчас?' : `Отметить уход: ${who.name}?`, who.id === state.user.id ? 'Закончить' : 'Отметить уход')) clockOut(who);
       else return;
       if (navigator.vibrate) navigator.vibrate(30);
       render(); return;
@@ -1495,7 +1542,7 @@
       if (d.go === 'team' && p.tab === 'hours' && !p.from && state.params.from) { p.from = state.params.from; p.to = state.params.to; }
       if (d.go === 'ttk' && state.view !== 'ttk' && p.station === undefined) { p.station = state.lastTtk?.station; p.cat = state.lastTtk?.cat; }
       if (d.go === 'ttk') state.lastTtk = { station: p.station, cat: p.cat };
-      go(d.go, p, el.closest('.bottom-nav') ? { tab: true } : {});
+      if (el.closest('.bottom-nav')) goTab(d.go, p); else go(d.go, p);
     }
   });
 
