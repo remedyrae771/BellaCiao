@@ -392,10 +392,16 @@ button.avatar:active { transform: scale(.92); transition-duration: .08s; }
 .ttk-detail .eyebrow { color: var(--tint); }
 .meta-row { display: flex; gap: 18px; flex-wrap: wrap; color: var(--label-2); font-size: 15px; }
 .meta-row b { color: var(--label); font-weight: 600; }
-.scaler { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0; padding: 10px 12px; border-radius: var(--r); background: var(--bg-2); box-shadow: var(--shadow-1); }
-.scaler > span { font-weight: 600; margin-right: 4px; }
-.scaler > b { min-width: 30px; text-align: center; font-size: 20px; font-variant-numeric: tabular-nums; }
-.scaler .icon-btn { width: 36px; height: 36px; background: var(--fill); color: var(--tint); }
+.scaler { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; padding: 12px 16px 14px; border-radius: var(--r); background: var(--bg-2); box-shadow: var(--shadow-1); }
+.scaler-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scaler-l { font-size: 17px; }
+.stepper { display: inline-flex; align-items: center; background: var(--fill-2); border-radius: 10px; height: 36px; }
+.stepper button { width: 46px; height: 36px; display: grid; place-items: center; color: var(--label); border-radius: 10px; transition: background-color .15s ease; }
+.stepper button:active { background: var(--press); transition: none; }
+.stepper button:disabled { color: var(--label-3); }
+.stepper b { min-width: 36px; text-align: center; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; box-shadow: inset .5px 0 0 var(--sep), inset -.5px 0 0 var(--sep); line-height: 22px; }
+.segmented.seg-sm { margin: 0; grid-template-columns: repeat(4, 1fr); }
+.segmented.seg-sm button { min-height: 32px; padding: 5px 4px; font-size: 15px; font-variant-numeric: tabular-nums; }
 .ttk-detail h3 { font-family: var(--font); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: var(--label-2); margin: 24px 2px 8px; }
 .ttk-detail h3 .muted { text-transform: none; font-size: 13px; letter-spacing: 0; }
 .table-wrap { overflow-x: auto; border-radius: var(--r); }
@@ -679,3 +685,11 @@ body.title-in .is-root .brand-mini { opacity: 0; }
   .key { width: 60px; height: 60px; font-size: 27px; }
   .login-foot { margin-top: 10px; }
 }
+
+/* ---------- Доводка 2: главная без дублей, понятные статусы ---------- */
+.lt-sub { margin: -8px 2px 14px; font-size: 17px; color: var(--label-2); letter-spacing: -.01em; }
+.lt-sub::first-letter { text-transform: uppercase; }
+.ok-t { color: var(--green) !important; }
+.list-sub { margin-top: 4px; font-size: 15px; color: var(--label-2); }
+.count-pill { flex: none; min-width: 24px; height: 24px; padding: 0 8px; border-radius: 12px; background: var(--red-fill); color: #fff; font-size: 14px; font-weight: 600; line-height: 24px; text-align: center; font-variant-numeric: tabular-nums; }
+.quick + .section-title, .alert + .section-title { margin-top: 26px; }

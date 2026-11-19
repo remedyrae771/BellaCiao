@@ -553,7 +553,7 @@
         <h1 class="nav-title">${esc(title)}</h1>
         <div class="nav-trail">
         ${(() => {
-          const open = openShift(state.user.id);
+          const open = state.view !== 'home' && openShift(state.user.id);
           return open ? `<button class="shift-pill" data-go="home" aria-label="Вы на смене. Открыть главную">
             <i></i><span role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</span></button>` : '';
         })()}
@@ -599,7 +599,7 @@
         <div class="eyebrow">${open ? 'Вы на смене' : 'Смена не начата'}</div>
         ${open
           ? `<div class="shift-timer" role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</div>
-             <small>Начало в ${fmtTime(open.start)} · ${fmtDate(open.start)}</small>`
+             <small>Начало в ${fmtTime(open.start)}${new Date(open.start).toDateString() === new Date().toDateString() ? '' : ' · ' + fmtDate(open.start)}</small>`
           : `<div class="shift-timer is-off">Не на смене</div><small>Отметьте приход, когда начинаете работу</small>`}
         <small class="shift-month">За этот месяц: <b>${fmtNum(hours(monthMs))} ч</b></small>
       </div>
@@ -681,19 +681,15 @@
 
     return `${header(greet)}
       <main class="page">
-        <section class="hero card">
-          <span class="avatar xl ${tone(u.role === 'chef' ? 'chef' : u.station)}">${esc(initials(u.name))}</span>
-          <div class="hero-t">
-            <div class="hero-name">${esc(u.name)}</div>
-            <div class="hero-meta">${ROLES[u.role].name} · ${esc(stationById(u.station).name)}</div>
-            <div class="hero-date">${new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-          </div>
-        </section>
+        <p class="lt-sub">${esc(new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${esc(u.name.split(/\s+/)[0])}, ${esc(u.role === 'cook' ? stationById(u.station).name.toLowerCase() : ROLES[u.role].name.toLowerCase())}</p>
 
         ${shiftCard()}
         ${can.manageTeam() && Object.values(load(KEY.codes, {})).some((c) => c.isDefault)
           ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
-        ${unread ? `<div class="alert alert-olive" data-go="safety">${ic('shield', 18)}<span>Не прочитано разделов ТБ: <b>${unread}</b>. Ознакомьтесь и подтвердите.</span></div>` : ''}
+        ${unread ? `<div class="quick"><button class="card quick-card" data-go="safety">
+            <span class="q-ic tone-green">${ic('shield', 22)}</span>
+            <span class="q-t"><b>Техника безопасности</b><small>Нужно прочитать и подтвердить</small></span>
+            <span class="count-pill">${unread}</span>${ic('chevR', 18)}</button></div>` : ''}
 
         ${can.report() ? (() => {
           const staff = load(KEY.staff, []);
@@ -710,18 +706,12 @@
             const p = stationProgress(s.id);
             return `<button class="card station-card" data-go="checklists" data-station="${s.id}">
               <span class="st-icon ${tone(s.id)}">${ic(s.icon, 24)}</span>
-              <span class="st-body"><b>${esc(s.name)}</b><small>${p.total ? `${p.n} из ${p.total} пунктов` : 'Чек-лист не заполнен'}</small></span>
-              ${ring(p.pct)}
+              <span class="st-body"><b>${esc(s.name)}</b><small${p.total && p.n === p.total ? ' class="ok-t"' : ''}>${!p.total ? 'Пункты ещё не добавлены' : p.n === p.total ? 'Всё выполнено' : `Выполнено ${p.n} из ${p.total}`}</small></span>
+              ${p.total ? ring(p.pct) : `<span class="chev">${ic('chevR', 18)}</span>`}
             </button>`;
           }).join('')}
         </div>
 
-        <h2 class="section-title">Быстрый доступ</h2>
-        <div class="quick">
-          <button class="card quick-card" data-go="ttk"><span class="q-ic tone-plum">${ic('book', 22)}</span><span class="q-t"><b>ТТК</b><small>Технологические карты</small></span>${ic('chevR', 18)}</button>
-          <button class="card quick-card" data-go="safety"><span class="q-ic tone-green">${ic('shield', 22)}</span><span class="q-t"><b>Техника безопасности</b><small>Правила и инструкции</small></span>${ic('chevR', 18)}</button>
-          ${can.report() ? `<button class="card quick-card" data-go="team"><span class="q-ic tone-sky">${ic('clock', 22)}</span><span class="q-t"><b>Табель</b><small>Часы и оплата</small></span>${ic('chevR', 18)}</button>` : ''}
-        </div>
       </main>${nav()}`;
   }
 
@@ -744,16 +734,16 @@
         <div class="segmented">${CHECKLIST_TYPES.map((t) => {
           const tp = progress(st, t.id);
           return `<button class="${t.id === type ? 'on' : ''}" data-go="checklists" data-station="${st}" data-type="${t.id}">
-            <span class="seg-t">${{ open: 'Открытие', shift: 'Смена', close: 'Закрытие' }[t.id] || t.name}</span><small>${tp.n}/${tp.total}</small></button>`;
+            <span class="seg-t">${{ open: 'Открытие', shift: 'Смена', close: 'Закрытие' }[t.id] || t.name}</span><small>${tp.total ? `${tp.n} из ${tp.total}` : '—'}</small></button>`;
         }).join('')}</div>
 
         <div class="list-head">
           <div>
             <div class="eyebrow">${esc(stationById(st).name)}</div>
             <h2>${CHECKLIST_TYPES.find((t) => t.id === type).name}</h2>
-            <div class="bar"><span style="width:${p.pct}%"></span></div>
+            <div class="list-sub${p.total && p.n === p.total ? ' ok-t' : ''}">${!p.total ? 'Пунктов пока нет' : p.n === p.total ? 'Всё выполнено' : `Осталось ${p.total - p.n} из ${p.total}`}</div>
           </div>
-          ${ring(p.pct, 64)}
+          ${p.total ? ring(p.pct, 64) : ''}
         </div>
 
         ${editing ? `<div class="edit-banner">${ic('edit', 18)}<span>Пункты для станции <b>${esc(stationById(st).name)}</b> · ${CHECKLIST_TYPES.find((t) => t.id === type).name}. Их увидят только повара этой станции.</span></div>` : ''}
@@ -845,7 +835,7 @@
         <span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>
         <span class="ttk-body">
           <b>${esc(t.name)}</b>
-          <small>${t.kind === 'dish' ? 'Блюдо' : 'ПФ'}${t.station ? ' · ' + esc(stationById(t.station).short) : ''} · ${esc(t.yield || '—')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
+          <small>${[t.kind === 'dish' ? '' : 'Полуфабрикат', t.station ? stationById(t.station).short : '', t.yield || ''].filter(Boolean).map(esc).join(' · ')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
         </span>
         <span class="chev">${ic('chevR', 18)}</span>
       </button>`;
@@ -932,11 +922,15 @@
         ${t.note ? `<div class="alert">${ic('alert', 18)}<span>${esc(t.note)}</span></div>` : ''}
 
         <div class="scaler">
-          <span>${isDish ? 'Порций' : 'Замесов'}:</span>
-          <button class="icon-btn" data-scale="-1" aria-label="Меньше">${ic('minus', 18)}</button>
-          <b>${k}</b>
-          <button class="icon-btn" data-scale="1" aria-label="Больше">${ic('plus', 18)}</button>
-          ${[2, 5, 10].map((n) => `<button class="chip ${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}
+          <div class="scaler-row">
+            <span class="scaler-l">${isDish ? 'Порций' : 'Замесов'}</span>
+            <span class="stepper">
+              <button data-scale="-1" aria-label="Меньше" ${k <= 1 ? 'disabled' : ''}>${ic('minus', 18)}</button>
+              <b aria-live="polite">${k}</b>
+              <button data-scale="1" aria-label="Больше">${ic('plus', 18)}</button>
+            </span>
+          </div>
+          <div class="segmented seg-sm">${[1, 2, 5, 10].map((n) => `<button class="${k === n ? 'on' : ''}" data-scale-set="${n}">×${n}</button>`).join('')}</div>
         </div>
 
         <h3>Ингредиенты ${k > 1 ? `<small class="muted">· пересчитано на ×${k}</small>` : ''}</h3>
@@ -1009,7 +1003,7 @@
     const all = load(KEY.safety, []);
     const mine = all.filter((s) => !s.stations.length || s.stations.includes(state.user.station) || can.allStations());
     const open = state.params.open;
-    return `${header('Техника безопасности')}
+    return `${header('Безопасность')}
       <main class="page">
         <p class="lead">Ознакомьтесь с каждым разделом и подтвердите. Подтверждения видит шеф-повар.</p>
         <div class="acc">
