@@ -339,7 +339,7 @@
     shifts.push({ id: 's' + uid(), uid: who.id, start: Date.now(), end: null, station: who.station,
       ...(who.id !== state.user.id ? { by: state.user.name } : {}) });
     save(KEY.shifts, shifts);
-    toast(who.id === state.user.id ? `Смена начата в ${fmtTime(Date.now())}` : `${who.name.split(/\s+/)[0]}: приход в ${fmtTime(Date.now())}`);
+    toast(who.id === state.user.id ? `Смена начата в ${fmtTime(Date.now())}` : `${who.name}: приход в ${fmtTime(Date.now())}`);
   }
 
   function clockOut(who = state.user) {
@@ -349,7 +349,7 @@
     s.end = Date.now();
     if (who.id !== state.user.id) s.endBy = state.user.name;
     save(KEY.shifts, shifts);
-    toast(who.id === state.user.id ? `Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}` : `${who.name.split(/\s+/)[0]}: уход, отработано ${fmtDur(s.end - s.start)}`);
+    toast(who.id === state.user.id ? `Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}` : `${who.name}: уход, отработано ${fmtDur(s.end - s.start)}`);
   }
 
   // Смены, начавшиеся в периоде [from, to] (даты 'YYYY-MM-DD' включительно)
