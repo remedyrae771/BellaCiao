@@ -88,13 +88,20 @@
     return new Promise((resolve) => {
       const wrap = document.createElement('div');
       wrap.className = 'modal';
-      wrap.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true">
-        <p>${esc(text)}</p>
-        <div class="modal-btns">
-          <button class="btn btn-ghost" data-ans="0">Отмена</button>
-          <button class="btn ${danger ? 'btn-danger' : ''}" data-ans="1">${esc(okLabel)}</button>
-        </div></div>`;
-      const done = (v) => { wrap.remove(); resolve(v); };
+      const single = okLabel === 'Понятно';
+      wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">
+        <div class="modal-box">
+          <p>${esc(text)}</p>
+          <button class="sheet-btn ${danger ? 'is-danger' : ''}" data-ans="1">${esc(okLabel)}</button>
+        </div>
+        ${single ? '' : '<button class="sheet-btn sheet-cancel" data-ans="0">Отмена</button>'}
+      </div>`;
+      const done = (v) => {
+        if (wrap.classList.contains('closing')) return;
+        wrap.classList.add('closing');
+        setTimeout(() => wrap.remove(), 220);
+        resolve(v);
+      };
       wrap.addEventListener('click', (e) => {
         e.stopPropagation();
         const b = e.target.closest('[data-ans]');
@@ -490,20 +497,23 @@
       <text x="50%" y="50%" dy=".35em" text-anchor="middle">${pct}%</text></svg>`;
   };
 
+  // Шапка как в приложениях iPhone: на главных экранах — крупный заголовок, который при прокрутке
+  // уезжает в полупрозрачную шапку; на вложенных — «‹ Назад» и заголовок по центру
   const header = (title, back) => `
-    <div class="topbar-wrap">
+    <div class="topbar-wrap ${back ? 'is-detail' : 'is-root'}">
       <header class="topbar">
-        ${back ? `<button class="icon-btn" data-back="${back}" aria-label="Назад">${ic('chevL', 22)}</button>` : `<div class="brand-mini"><span>Bella Ciao</span><small>Кухня</small></div>`}
-        <h1>${title === 'Bella Ciao' ? '' : esc(title)}</h1>
+        <div class="nav-lead">${back ? `<button class="nav-back" data-back="${back}" aria-label="Назад">${ic('chevL', 24)}<span>Назад</span></button>` : '<div class="brand-mini" aria-label="Bella Ciao">Bella Ciao</div>'}</div>
+        <h1 class="nav-title">${esc(title)}</h1>
+        <div class="nav-trail">
         ${(() => {
           const open = openShift(state.user.id);
           return open ? `<button class="shift-pill" data-go="home" aria-label="Вы на смене. Открыть главную">
             <i></i><span role="timer" aria-live="off" data-since="${open.start}" data-fmt="full">${fmtClock(Date.now() - open.start)}</span></button>` : '';
         })()}
-        <button class="avatar" data-go="profile" title="${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
+        <button class="avatar ${tone(state.user.role === 'chef' ? 'chef' : state.user.station)}" data-go="profile" aria-label="Профиль: ${esc(state.user.name)}">${esc(initials(state.user.name))}</button>
+        </div>
       </header>
-      <div class="ceramic-rule"></div>
-    </div>`;
+    </div>${back ? '' : `<!--LT:${esc(title)}-->`}`;
 
   const initials = (name) => name.split(/\s+/).filter((w) => /^[\p{L}]/u.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
@@ -611,12 +621,15 @@
     const mySafety = load(KEY.safety, []).filter((s) => !s.stations.length || s.stations.includes(u.station) || can.allStations());
     const unread = mySafety.filter((s) => !acks[s.id]).length;
 
-    return `${header('Bella Ciao')}
+    return `${header(greet)}
       <main class="page">
-        <section class="hero">
-          <div class="hero-greet">${greet}</div>
-          <div class="hero-name">${esc(u.name)}</div>
-          <div class="hero-meta">${ROLES[u.role].name} · ${esc(stationById(u.station).name)} · ${fmtDate(Date.now())}</div>
+        <section class="hero card">
+          <span class="avatar xl ${tone(u.role === 'chef' ? 'chef' : u.station)}">${esc(initials(u.name))}</span>
+          <div class="hero-t">
+            <div class="hero-name">${esc(u.name)}</div>
+            <div class="hero-meta">${ROLES[u.role].name} · ${esc(stationById(u.station).name)}</div>
+            <div class="hero-date">${new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+          </div>
         </section>
 
         ${shiftCard()}
@@ -674,7 +687,7 @@
         <div class="segmented">${CHECKLIST_TYPES.map((t) => {
           const tp = progress(st, t.id);
           return `<button class="${t.id === type ? 'on' : ''}" data-go="checklists" data-station="${st}" data-type="${t.id}">
-            <span class="seg-t">${ic(t.icon, 16)} ${t.name}</span><small>${tp.n}/${tp.total}</small></button>`;
+            <span class="seg-t">${{ open: 'Открытие', shift: 'Смена', close: 'Закрытие' }[t.id] || t.name}</span><small>${tp.n}/${tp.total}</small></button>`;
         }).join('')}</div>
 
         <div class="list-head">
@@ -812,7 +825,7 @@
     return `${header('ТТК')}
       <main class="page">
         <div class="search">
-          <input type="search" id="ttk-search" placeholder="Поиск: блюдо или продукт (${all.length} карт)" value="${esc(state.params.q || '')}" enterkeyhint="search" autocomplete="off"/>
+          <input type="search" id="ttk-search" placeholder="Блюдо или продукт" value="${esc(state.params.q || '')}" enterkeyhint="search" autocomplete="off"/>
         </div>
         ${cat || q ? `<div class="chips">
           <button class="chip ${!cat ? 'on' : ''}" data-go="ttk" data-cat="" data-station="${st}">Все разделы</button>
@@ -1274,6 +1287,7 @@
     renderMemo = new Map();
     let html;
     try { html = (VIEWS[state.view] || viewHome)(); } finally { renderMemo = null; }
+    html = html.replace(/<!--LT:([\s\S]*?)-->\s*<main class="page([^"]*)">/, (m, t, cls) => `<main class="page${cls}"><h1 class="large-title">${t}</h1>`);
     if (screen === lastScreen) {
       if (html !== lastHtml) patch(app, html);
     } else {
@@ -1287,7 +1301,21 @@
     }
     state.navDir = null;
     lastScreen = screen; lastHtml = html;
+    updateScrollState();
   }
+  // Крупный заголовок уезжает в шапку при прокрутке (как в iOS)
+  let scrollTick = false;
+  function updateScrollState() {
+    const y = window.scrollY;
+    document.body.classList.toggle('scrolled', y > 2);
+    document.body.classList.toggle('title-in', y > 36);
+  }
+  window.addEventListener('scroll', () => {
+    if (scrollTick) return;
+    scrollTick = true;
+    requestAnimationFrame(() => { scrollTick = false; updateScrollState(); });
+  }, { passive: true });
+
   function patch(app, html) {
     const t = document.createElement('template');
     t.innerHTML = html;
