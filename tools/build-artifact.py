@@ -2,7 +2,7 @@
 Использование: python3 tools/build-artifact.py <путь к результату>"""
 import sys
 css = open('css/styles.css').read()
-js = ''.join(open(f).read() + '\n' for f in ['js/data.js', 'js/ttk-data.js', 'js/sync.js', 'js/app.js'])
+js = ''.join(open(f).read() + '\n' for f in ['js/data.js', 'js/ttk-data.js', 'js/tips-data.js', 'js/sync.js', 'js/app.js'])
 assert '</script' not in js
 open(sys.argv[1], 'w').write(f'''<title>Bella Ciao Кухня</title>
 <meta name="theme-color" content="#13284a">
