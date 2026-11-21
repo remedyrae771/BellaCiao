@@ -731,3 +731,7 @@ body.title-in .is-root .brand-mini { opacity: 0; }
 .tips-head .muted { margin: 2px 0 0; }
 .count-muted { flex: none; color: var(--label-2); font-size: 17px; font-variant-numeric: tabular-nums; }
 .bottom-nav button > span:last-child { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.tip-day-f { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; font-size: 14px; color: rgba(255,255,255,.75); }
+.tip-next { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 6px 12px 6px 14px; border-radius: 18px;
+  background: rgba(255,255,255,.16); color: #fff; font-size: 15px; font-weight: 600; flex: none; transition: background-color .15s ease; }
+.tip-next:active { background: rgba(255,255,255,.28); transition: none; }
