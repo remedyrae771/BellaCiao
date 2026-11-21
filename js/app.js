@@ -154,7 +154,7 @@
 
   // ТТК из учётной системы: добавляются на все устройства один раз.
   // Карты, которые шеф правил, сохраняются; заменяются только старые версии с фото.
-  const ttkNeedsUpdate = (list) => !list.some((t) => t.id === 'x001') || list.some((t) => TTK_REPLACED_IDS.includes(t.id));
+  const ttkNeedsUpdate = (list) => !list.some((t) => t.id === 'x001') || !list.some((t) => t.id === 'ny01') || list.some((t) => TTK_REPLACED_IDS.includes(t.id));
   const OLD_TTK_CATEGORIES = ['Мясо и птица', 'Начинки для равиоли', 'Закуски и намазки', 'Овощи и гарниры'];
   function mergeTtkDefaults(stored) {
     const have = new Set(stored.map((t) => t.id));
@@ -289,7 +289,7 @@
     const pin = state.pin;
     const h = await hashPin(pin);
     const codes = load(KEY.codes, {});
-    const group = Object.keys(codes).find((g) => codes[g].hash === h);
+    const group = LOGIN_GROUPS.find((g) => codes[g] && codes[g].hash === h);
     if (group) {
       state.group = group; state.pin = ''; state.failed = 0;
       render();
@@ -310,10 +310,12 @@
     }
   }
 
-  // Сотрудники, которых можно выбрать после ввода кода станции
+  // Приложением пользуются только руководители кухни: шеф-повар (свой код) и су-шефы (код раздачи).
+  // Повара не входят — их приход и уход отмечают шеф или су-шеф в разделе «Команда».
+  const LOGIN_GROUPS = ['chef', 'pass'];
   function groupMembers(group) {
     return load(KEY.staff, []).filter((u) => !u.disabled &&
-      (group === 'chef' ? u.role === 'chef' : u.station === group && u.role !== 'chef'));
+      (group === 'chef' ? u.role === 'chef' : group === 'pass' ? u.role === 'sous' : false));
   }
 
   function pickUser(id) {
@@ -331,21 +333,23 @@
   const allShifts = () => load(KEY.shifts, []);
   const openShift = (userId) => allShifts().find((s) => s.uid === userId && !s.end);
 
-  function clockIn() {
-    if (openShift(state.user.id)) return;
+  function clockIn(who = state.user) {
+    if (openShift(who.id)) return;
     const shifts = allShifts();
-    shifts.push({ id: 's' + uid(), uid: state.user.id, start: Date.now(), end: null, station: state.user.station });
+    shifts.push({ id: 's' + uid(), uid: who.id, start: Date.now(), end: null, station: who.station,
+      ...(who.id !== state.user.id ? { by: state.user.name } : {}) });
     save(KEY.shifts, shifts);
-    toast(`Смена начата в ${fmtTime(Date.now())}`);
+    toast(who.id === state.user.id ? `Смена начата в ${fmtTime(Date.now())}` : `${who.name}: приход в ${fmtTime(Date.now())}`);
   }
 
-  function clockOut() {
+  function clockOut(who = state.user) {
     const shifts = allShifts();
-    const s = shifts.find((x) => x.uid === state.user.id && !x.end);
+    const s = shifts.find((x) => x.uid === who.id && !x.end);
     if (!s) return;
     s.end = Date.now();
+    if (who.id !== state.user.id) s.endBy = state.user.name;
     save(KEY.shifts, shifts);
-    toast(`Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}`);
+    toast(who.id === state.user.id ? `Смена закрыта. Отработано: ${fmtDur(s.end - s.start)}` : `${who.name}: уход, отработано ${fmtDur(s.end - s.start)}`);
   }
 
   // Смены, начавшиеся в периоде [from, to] (даты 'YYYY-MM-DD' включительно)
@@ -374,7 +378,7 @@
     if (!opts.fromHistory) {
       try {
         // Фильтры и вкладки внутри экрана не копятся в истории «Назад»
-        if (sameScreen) history.replaceState({ bc: true, view, params, depth: navDepth }, '');
+        if (sameScreen || opts.replace) history.replaceState({ bc: true, view, params, depth: navDepth }, '');
         else { history.pushState({ bc: true, view, params, depth: navDepth + 1 }, ''); navDepth++; }
       } catch { /* история недоступна */ }
     }
@@ -382,11 +386,31 @@
     if (!sameScreen) window.scrollTo(0, opts.fromHistory ? (scrollMemory[viewKeyOf(view, params)] || 0) : 0);
   }
 
+  // Вкладки внизу — как в приложениях iPhone: переключение вкладки не добавляет шаг в «Назад».
+  // В истории остаются только главная и путь внутри текущей вкладки, поэтому жест «назад»
+  // никогда не перекидывает на другую вкладку (например, из ТТК в чек-листы).
+  let pendingTab = null;
+  function goTab(view, params) {
+    if (navDepth > 1 || (view === 'home' && navDepth > 0)) {
+      // сначала сворачиваем историю до главной (или до первой вкладки), потом показываем нужную
+      pendingTab = { view, params };
+      try { history.go(-(view === 'home' ? navDepth : navDepth - 1)); return; } catch { pendingTab = null; }
+    }
+    if (view === 'home') { go('home', params, { tab: true }); return; }
+    go(view, params, { tab: true, replace: navDepth === 1 });
+  }
+
   window.addEventListener('popstate', (e) => {
     if (!state.user) return;
     const st = e.state && e.state.bc ? e.state : { view: 'home', params: {}, depth: 0 };
     navDepth = st.depth || 0;
     document.querySelector('.modal')?.remove();
+    if (pendingTab) {
+      const t = pendingTab; pendingTab = null;
+      if (t.view === 'home') go('home', t.params, { tab: true, replace: true });
+      else go(t.view, t.params, { tab: true, replace: navDepth >= 1 });
+      return;
+    }
     go(st.view, st.params || {}, { fromHistory: true });
   });
 
@@ -398,6 +422,8 @@
     document.addEventListener('touchstart', (e) => {
       const t = e.touches[0];
       if (e.touches.length !== 1 || t.clientX > 24 || !state.user || navDepth < 1 || document.querySelector('.modal')) return;
+      const strip = e.target.closest?.('.chips, .table-wrap');
+      if (strip && strip.scrollLeft > 0) return; // это прокрутка ленты, а не «назад»
       const main = document.querySelector('#app > main');
       if (main) sw = { x: t.clientX, y: t.clientY, t: Date.now(), main, dx: 0, lock: null, lastX: t.clientX, lastT: Date.now(), v: 0 };
     }, { passive: true });
@@ -518,11 +544,13 @@
     firstaid: 'M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM8.5 7V4.5h7V7M12 10.5v6M9 13.5h6',
     fish: 'M3 12c2.4-3.6 5.8-5.5 9.5-5.5S19 8.4 21 12c-2 3.6-4.8 5.5-8.5 5.5S5.4 15.6 3 12zM3 12 1 9.5M3 12l-2 2.5M16.5 10.8h.01',
     leaf: 'M5 19c-.5-6.5 3.5-12.5 15-14-1 11.5-7.5 15.5-14 14.5zM5 19l7.5-7.5',
+    gift: 'M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 7.5h18V11H3zM12 7.5V21M12 7.5C10.5 4 7 3.6 7 5.6 7 7 9.5 7.5 12 7.5zM12 7.5c1.5-3.5 5-3.9 5-1.9 0 1.4-2.5 1.9-5 1.9z',
     cog: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1',
   };
   // Цвет плитки: у каждой станции и категории ТТК свой
   const STATION_TONE = { cold: 'sky', pasta: 'amber', grill: 'coral', pass: 'navy', pizza: 'rose', pastry: 'plum', chef: 'violet' };
   const CATEGORY_LOOK = {
+    'Новогодний спешл': ['gift', 'coral'],
     'Завтраки': ['coffee', 'amber'], 'Салаты': ['leaf', 'green'], 'Закуски и антипасти': ['bread', 'teal'],
     'Супы и бульоны': ['soup', 'sky'], 'Паста и равиоли': ['pasta', 'navy'], 'Пицца': ['pizza', 'rose'],
     'Горячие блюда': ['flame', 'coral'], 'Детское меню': ['sun', 'violet'], 'Десерты': ['cake', 'plum'],
@@ -530,7 +558,7 @@
     'Полуфабрикаты': ['clipboard', 'navy'],
   };
   // Разделы меню и разделы полуфабрикатов на экране ТТК
-  const MENU_CATEGORIES = ['Завтраки', 'Салаты', 'Закуски и антипасти', 'Супы и бульоны', 'Паста и равиоли', 'Пицца', 'Горячие блюда', 'Детское меню', 'Десерты'];
+  const MENU_CATEGORIES = ['Новогодний спешл', 'Завтраки', 'Салаты', 'Закуски и антипасти', 'Супы и бульоны', 'Паста и равиоли', 'Пицца', 'Горячие блюда', 'Детское меню', 'Десерты'];
   const plural = (n, [one, few, many]) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
   const tone = (stationId) => 'tone-' + (STATION_TONE[stationId] || 'navy');
   const ic = (name, size = 20) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] || ICONS.shield}"/></svg>`;
@@ -657,7 +685,7 @@
             : state.loginError ? state.loginError
             : Sync.status === 'loading' ? 'Подключаемся к базе…'
             : Sync.status === 'offline' ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
-            : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код вашей станции'}</p>
+            : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код руководителя'}</p>
           <div class="pin-dots" aria-label="Введено цифр: ${state.pin.length} из 4">${dots}</div>
           <div class="keypad">
             ${keys.map((k) => k === ''
@@ -684,8 +712,8 @@
         <p class="lt-sub">${esc(new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${esc(u.name.split(/\s+/)[0])}, ${esc(u.role === 'cook' ? stationById(u.station).name.toLowerCase() : ROLES[u.role].name.toLowerCase())}</p>
 
         ${shiftCard()}
-        ${can.manageTeam() && Object.values(load(KEY.codes, {})).some((c) => c.isDefault)
-          ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Некоторые станции используют стандартные коды. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
+        ${can.manageTeam() && LOGIN_GROUPS.some((g) => load(KEY.codes, {})[g]?.isDefault)
+          ? `<div class="alert" data-go="team" data-tab="codes">${ic('lock', 18)}<span>Стандартные коды входа ещё не сменены. <b>Смените их</b> в разделе «Команда → Коды».</span></div>` : ''}
         ${unread ? `<div class="quick"><button class="card quick-card" data-go="safety">
             <span class="q-ic tone-green">${ic('shield', 22)}</span>
             <span class="q-t"><b>Техника безопасности</b><small>Нужно прочитать и подтвердить</small></span>
@@ -824,7 +852,7 @@
     const all = load(KEY.ttk, []);
     const q = (state.params.q || '').trim().toLowerCase();
     const cat = state.params.cat || '';
-    const st = state.params.station || '';
+    const st = ''; // фильтр по станциям убран: станция подписана у каждой карты
     const catOf = (t) => (TTK_CATEGORIES.includes(t.category) ? t.category : 'Другое');
     const cats = TTK_CATEGORIES.filter((c) => all.some((t) => t.category === c));
     if (all.some((t) => catOf(t) === 'Другое')) cats.push('Другое');
@@ -832,7 +860,7 @@
     const look = (c) => CATEGORY_LOOK[c] || ['book', 'navy'];
     const card = (t) => `
       <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-        <span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>
+        ${t.photo ? `<img class="ttk-thumb" src="${esc(t.photo)}" alt="" loading="lazy" decoding="async"/>` : `<span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>`}
         <span class="ttk-body">
           <b>${esc(t.name)}</b>
           <small>${[t.kind === 'dish' ? '' : 'Полуфабрикат', t.station ? stationById(t.station).short : '', t.yield || ''].filter(Boolean).map(esc).join(' · ')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
@@ -858,6 +886,10 @@
       // Главный экран ТТК — плитки разделов
       const tile = (c) => {
         const n = byStation.filter((t) => catOf(t) === c).length;
+        const cover = all.find((t) => t.category === c && t.photo && t.id === 'ny05') || all.find((t) => t.category === c && t.photo);
+        if (n && cover) return `<button class="card cat-tile cat-feature" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
+          <img src="${esc(cover.photo)}" alt="" loading="lazy" decoding="async"/>
+          <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>`;
         return n ? `<button class="card cat-tile" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
           <span class="ttk-st tone-${look(c)[1]}">${ic(look(c)[0], 24)}</span>
           <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>` : '';
@@ -878,10 +910,6 @@
           <button class="chip ${!cat ? 'on' : ''}" data-go="ttk" data-cat="" data-station="${st}">Все разделы</button>
           ${cats.map((c) => `<button class="chip ${c === cat ? 'on' : ''}" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">${esc(c)}</button>`).join('')}
         </div>` : ''}
-        <div class="chips chips-sm">
-          <button class="chip ${!st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="">Все станции</button>
-          ${STATIONS.map((x) => `<button class="chip ${x.id === st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="${x.id}">${ic(x.icon, 14)} ${esc(x.short)}</button>`).join('')}
-        </div>
         ${body}
         ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">${ic('plus', 26)}</button>` : ''}
       </main>${nav()}`;
@@ -912,6 +940,7 @@
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
+        ${t.photo ? `<figure class="ttk-photo"><img src="${esc(t.photo)}" alt="${esc(t.name)}" decoding="async"/></figure>` : ''}
         <div class="eyebrow">${esc([t.category, t.station ? stationById(t.station).short : 'Все станции']
           .filter((x, i, a) => x && a.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(' · '))}</div>
         <h2 class="dish">${esc(t.name)}</h2>
@@ -937,7 +966,7 @@
         <table class="ing">
           <thead><tr><th>Продукт</th><th>Кол-во</th><th>Ед.</th></tr></thead>
           <tbody>${t.ingredients.map((i) => {
-            const [qv, qu] = showQty(i[1] * k, ingUnit(i));
+            const [qv, qu] = Number(i[1]) ? showQty(i[1] * k, ingUnit(i)) : ['—', 'уточнить'];
             const pf = /^пф/i.test(String(i[0])) ? pfIndex.get(ttkKey(i[0])) : null;
             const name = pf && pf !== t.id
               ? `<button class="ing-link" data-go="ttk-view" data-id="${pf}">${esc(i[0])}${ic('chevR', 14)}</button>` : esc(i[0]);
@@ -1110,7 +1139,26 @@
     }).filter((r) => r.list.length);
     const totalH = rows.reduce((a, r) => a + r.h, 0), totalSum = rows.reduce((a, r) => a + r.sum, 0);
 
-    return `
+    // Приход и уход поваров отмечает руководитель: повара в приложение не входят
+    const crew = staff.filter((u) => !u.disabled && u.id !== state.user.id);
+    const attendance = `
+      <h2 class="section-title">Приход и уход</h2>
+      <div class="team-list attend">
+        ${crew.map((u) => {
+          const o = openShift(u.id);
+          return `<div class="member attend-row">
+            <span class="avatar lg ${tone(u.role === 'chef' ? 'chef' : u.station)}">${esc(initials(u.name))}</span>
+            <span class="m-body"><b>${esc(u.name)}</b><small>${o
+              ? `<span class="on-shift">на смене</span> · с ${fmtTime(o.start)} · <span data-since="${o.start}" data-fmt="short">${fmtClock(Date.now() - o.start, false)}</span>`
+              : `${u.role === 'cook' ? esc(stationById(u.station).short) : ROLES[u.role].name}`}</small></span>
+            ${o ? `<button class="btn btn-sm btn-out" data-clock="out" data-uid="${u.id}">Ушёл</button>`
+                : `<button class="btn btn-sm" data-clock="in" data-uid="${u.id}">Пришёл</button>`}
+          </div>`;
+        }).join('') || '<p class="empty">Добавьте сотрудников во вкладке «Люди»</p>'}
+      </div>
+      <h2 class="section-title">Табель</h2>`;
+
+    return `${attendance}
       <div class="card now-card">
         <div class="eyebrow">Сейчас на смене · ${onShift.length}</div>
         ${onShift.length ? `<ul class="now-list">${onShift.map((s) => `<li>
@@ -1166,10 +1214,10 @@
   // Коды входа станций (только шеф)
   function codesTab() {
     const codes = load(KEY.codes, {});
-    const groups = [...STATIONS, CHEF_GROUP];
+    const groups = [CHEF_GROUP, { ...stationById('pass'), name: 'Су-шефы' }];
     return `
-      <p class="lead">У каждой станции свой код. После ввода кода сотрудник выбирает себя из списка поваров этой станции.
-        Сами повара коды менять не могут.</p>
+      <p class="lead">В приложение входят только шеф-повар и су-шефы. После ввода кода нужно выбрать себя из списка.
+        Повара не входят: их приход и уход отмечает руководитель во вкладке «Табель».</p>
       <div class="codes">
         ${groups.map((g) => `
           <form class="card code-row" data-form="code" data-group="${g.id}">
@@ -1419,8 +1467,10 @@
     if (d.pick) { pickUser(d.pick); return; }
     if (el.hasAttribute('data-cancel-pick')) { state.group = null; render(); return; }
     if (d.clock) {
-      if (d.clock === 'in') clockIn();
-      else if (await ask('Закончить смену сейчас?', 'Закончить')) clockOut();
+      const who = d.uid ? load(KEY.staff, []).find((u) => u.id === d.uid) : state.user;
+      if (!who || (who.id !== state.user.id && !can.report())) return;
+      if (d.clock === 'in') clockIn(who);
+      else if (await ask(who.id === state.user.id ? 'Закончить смену сейчас?' : `Отметить уход: ${who.name}?`, who.id === state.user.id ? 'Закончить' : 'Отметить уход')) clockOut(who);
       else return;
       if (navigator.vibrate) navigator.vibrate(30);
       render(); return;
@@ -1495,7 +1545,7 @@
       if (d.go === 'team' && p.tab === 'hours' && !p.from && state.params.from) { p.from = state.params.from; p.to = state.params.to; }
       if (d.go === 'ttk' && state.view !== 'ttk' && p.station === undefined) { p.station = state.lastTtk?.station; p.cat = state.lastTtk?.cat; }
       if (d.go === 'ttk') state.lastTtk = { station: p.station, cat: p.cat };
-      go(d.go, p, el.closest('.bottom-nav') ? { tab: true } : {});
+      if (el.closest('.bottom-nav')) goTab(d.go, p); else go(d.go, p);
     }
   });
 
