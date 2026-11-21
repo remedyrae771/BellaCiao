@@ -860,7 +860,7 @@
     const look = (c) => CATEGORY_LOOK[c] || ['book', 'navy'];
     const card = (t) => `
       <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-        ${t.photo ? `<img class="ttk-thumb" src="${esc(t.photo)}" alt="" loading="lazy" decoding="async"/>` : `<span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>`}
+        <span class="ttk-st tone-${look(t.category)[1]}${t.photo ? ' has-photo' : ''}">${ic(look(t.category)[0], 22)}${t.photo ? `<img class="ttk-thumb" src="${esc(t.photo)}" alt="" loading="lazy" decoding="async" onerror="this.remove()"/>` : ''}</span>
         <span class="ttk-body">
           <b>${esc(t.name)}</b>
           <small>${[t.kind === 'dish' ? '' : 'Полуфабрикат', t.station ? stationById(t.station).short : '', t.yield || ''].filter(Boolean).map(esc).join(' · ')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
@@ -888,7 +888,7 @@
         const n = byStation.filter((t) => catOf(t) === c).length;
         const cover = all.find((t) => t.category === c && t.photo && t.id === 'ny05') || all.find((t) => t.category === c && t.photo);
         if (n && cover) return `<button class="card cat-tile cat-feature" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
-          <img src="${esc(cover.photo)}" alt="" loading="lazy" decoding="async"/>
+          <img src="${esc(cover.photo)}" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('no-photo'); this.remove()"/>
           <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>`;
         return n ? `<button class="card cat-tile" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
           <span class="ttk-st tone-${look(c)[1]}">${ic(look(c)[0], 24)}</span>
@@ -940,7 +940,7 @@
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
-        ${t.photo ? `<figure class="ttk-photo"><img src="${esc(t.photo)}" alt="${esc(t.name)}" decoding="async"/></figure>` : ''}
+        ${t.photo ? `<figure class="ttk-photo"><img src="${esc(t.photo)}" alt="${esc(t.name)}" decoding="async" onerror="this.parentNode.remove()"/></figure>` : ''}
         <div class="eyebrow">${esc([t.category, t.station ? stationById(t.station).short : 'Все станции']
           .filter((x, i, a) => x && a.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(' · '))}</div>
         <h2 class="dish">${esc(t.name)}</h2>
