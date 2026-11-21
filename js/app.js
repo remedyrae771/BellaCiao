@@ -1060,12 +1060,31 @@
   }
 
   /* ---------- Советы для профессиональной кухни ---------- */
-  // Совет дня: каждый день новый, одинаковый на всех устройствах
-  function tipOfDay() {
-    const flat = TIPS.flatMap((c) => c.tips.map((t) => ({ ...t, cat: c })));
-    const d = new Date(); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7;
-    return flat[n % flat.length];
+  // Порядок разделов: от продукта и техники к организации кухни
+  const TIP_ORDER = ['meat', 'fish', 'heat', 'pasta', 'pizza', 'sauce', 'stock', 'cold', 'veg', 'pastry', 'taste', 'prep', 'safety', 'lead', 'cost'];
+  const tipSections = () => [...TIPS].sort((a, b) => (TIP_ORDER.indexOf(a.id) + 99) % 99 - (TIP_ORDER.indexOf(b.id) + 99) % 99);
+  // Совет меняется каждые 2 часа (12 в сутки), одинаково на всех устройствах.
+  // Разделы чередуются по кругу, чтобы два совета подряд не были про одно и то же.
+  const TIP_EVERY_H = 2;
+  let tipFlat = null;
+  function tipQueue() {
+    if (tipFlat) return tipFlat;
+    const secs = tipSections(); tipFlat = [];
+    for (let i = 0; secs.some((c) => c.tips[i]); i++) for (const c of secs) if (c.tips[i]) tipFlat.push({ ...c.tips[i], cat: c });
+    return tipFlat;
   }
+  function tipSlot(now = Date.now()) {
+    const localH = Math.floor((now - new Date(now).getTimezoneOffset() * 60000) / 3600000);
+    return Math.floor(localH / TIP_EVERY_H);
+  }
+  function currentTip() {
+    const q = tipQueue(), slot = tipSlot();
+    if (state.tipSlot !== slot) { state.tipSlot = slot; state.tipExtra = 0; }
+    return q[(slot + (state.tipExtra || 0)) % q.length];
+  }
+  // Если вкладка «Советы» открыта, когда наступает новое двухчасовое окно, совет меняется сам
+  setInterval(() => { if (state.user && state.view === 'tips' && tipSlot() !== state.tipSlot && document.visibilityState === 'visible') render(); }, 30000);
+  const nextTipAt = () => { const d = new Date(); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + TIP_EVERY_H - (d.getHours() % TIP_EVERY_H)); return d; };
   const tipCard = (t, withCat) => `
     <article class="card tip">
       ${withCat ? `<div class="eyebrow">${esc(t.cat.title)}</div>` : ''}
@@ -1075,19 +1094,23 @@
     </article>`;
 
   function viewTips() {
-    const day = tipOfDay();
+    const day = currentTip();
     return `${header('Советы')}
       <main class="page">
-        <p class="lt-sub">Приёмы и цифры профессиональной кухни</p>
+        <p class="lt-sub">${tipQueue().length} ${plural(tipQueue().length, ['приём', 'приёма', 'приёмов'])} профессиональной кухни</p>
         <section class="tip-day">
-          <div class="tip-day-h">${ic('star', 16)} Совет дня · ${esc(day.cat.title)}</div>
+          <div class="tip-day-h">${ic('star', 16)} ${state.tipExtra ? 'Ещё совет' : 'Совет сейчас'} · ${esc(day.cat.title)}</div>
           <h3 class="tip-t">${esc(day.t)}</h3>
           <p class="tip-d">${esc(day.d)}</p>
           ${day.why ? `<p class="tip-why"><b>Почему:</b> ${esc(day.why)}</p>` : ''}
+          <div class="tip-day-f">
+            <span>Новый совет в ${fmtTime(nextTipAt())}</span>
+            <button class="tip-next" data-tip-next>Ещё совет ${ic('chevR', 16)}</button>
+          </div>
         </section>
         <h2 class="section-title">Разделы</h2>
         <div class="quick">
-          ${TIPS.map((c) => `<button class="card quick-card" data-go="tips-cat" data-id="${c.id}">
+          ${tipSections().map((c) => `<button class="card quick-card" data-go="tips-cat" data-id="${c.id}">
             <span class="q-ic tone-${c.tone}">${ic(c.icon, 22)}</span>
             <span class="q-t"><b>${esc(c.title)}</b><small>${esc(c.sub)}</small></span>
             <span class="count-muted">${c.tips.length}</span>${ic('chevR', 18)}</button>`).join('')}
@@ -1511,6 +1534,14 @@
       else if (state.pin.length < 4) state.pin += d.key;
       updatePinDots();
       if (state.pin.length === 4) setTimeout(tryLogin, 120);
+      return;
+    }
+    if (el.hasAttribute('data-tip-next')) {
+      state.tipExtra = (state.tipExtra || 0) + 1;
+      if (navigator.vibrate) navigator.vibrate(8);
+      render();
+      const card = document.querySelector('.tip-day');
+      if (card?.animate && !reduceMotion.matches) card.animate([{ opacity: 0.4, transform: 'translateX(14px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.22,1,.36,1)' });
       return;
     }
     if (d.pick) { pickUser(d.pick); return; }
