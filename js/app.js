@@ -852,7 +852,7 @@
     const all = load(KEY.ttk, []);
     const q = (state.params.q || '').trim().toLowerCase();
     const cat = state.params.cat || '';
-    const st = state.params.station || '';
+    const st = ''; // фильтр по станциям убран: станция подписана у каждой карты
     const catOf = (t) => (TTK_CATEGORIES.includes(t.category) ? t.category : 'Другое');
     const cats = TTK_CATEGORIES.filter((c) => all.some((t) => t.category === c));
     if (all.some((t) => catOf(t) === 'Другое')) cats.push('Другое');
@@ -910,10 +910,6 @@
           <button class="chip ${!cat ? 'on' : ''}" data-go="ttk" data-cat="" data-station="${st}">Все разделы</button>
           ${cats.map((c) => `<button class="chip ${c === cat ? 'on' : ''}" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">${esc(c)}</button>`).join('')}
         </div>` : ''}
-        <div class="chips chips-sm">
-          <button class="chip ${!st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="">Все станции</button>
-          ${STATIONS.map((x) => `<button class="chip ${x.id === st ? 'on' : ''}" data-go="ttk" data-cat="${esc(cat)}" data-station="${x.id}">${ic(x.icon, 14)} ${esc(x.short)}</button>`).join('')}
-        </div>
         ${body}
         ${can.editTtk() ? `<button class="fab" data-go="ttk-edit" aria-label="Новая ТТК">${ic('plus', 26)}</button>` : ''}
       </main>${nav()}`;
