@@ -367,7 +367,7 @@
   let navDepth = 0;
 
   // Переход на экран. Кнопка «Назад» телефона возвращает на предыдущий экран, а не закрывает приложение
-  const TABS = ['home', 'checklists', 'ttk', 'safety', 'team'];
+  const TABS = ['home', 'checklists', 'ttk', 'tips', 'safety', 'team'];
   function go(view, params = {}, opts = {}) {
     scrollMemory[viewKeyOf(state.view, state.params)] = window.scrollY;
     const sameScreen = screenOf(view, params) === screenOf(state.view, state.params);
@@ -544,6 +544,8 @@
     firstaid: 'M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM8.5 7V4.5h7V7M12 10.5v6M9 13.5h6',
     fish: 'M3 12c2.4-3.6 5.8-5.5 9.5-5.5S19 8.4 21 12c-2 3.6-4.8 5.5-8.5 5.5S5.4 15.6 3 12zM3 12 1 9.5M3 12l-2 2.5M16.5 10.8h.01',
     leaf: 'M5 19c-.5-6.5 3.5-12.5 15-14-1 11.5-7.5 15.5-14 14.5zM5 19l7.5-7.5',
+    bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2v.5h5v-.5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3z',
+    star: 'M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z',
     gift: 'M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 7.5h18V11H3zM12 7.5V21M12 7.5C10.5 4 7 3.6 7 5.6 7 7 9.5 7.5 12 7.5zM12 7.5c1.5-3.5 5-3.9 5-1.9 0 1.4-2.5 1.9-5 1.9z',
     cog: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1',
   };
@@ -597,6 +599,7 @@
       ['home', 'home', 'Главная'],
       ['checklists', 'checklist', 'Чек-листы'],
       ['ttk', 'book', 'ТТК'],
+      ['tips', 'bulb', 'Советы'],
       ['safety', 'shield', 'ТБ'],
     ];
     if (can.report()) items.push(['team', 'users', 'Команда']);
@@ -860,7 +863,7 @@
     const look = (c) => CATEGORY_LOOK[c] || ['book', 'navy'];
     const card = (t) => `
       <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-        ${t.photo ? `<img class="ttk-thumb" src="${esc(t.photo)}" alt="" loading="lazy" decoding="async"/>` : `<span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>`}
+        <span class="ttk-st tone-${look(t.category)[1]}${t.photo ? ' has-photo' : ''}">${ic(look(t.category)[0], 22)}${t.photo ? `<img class="ttk-thumb" src="${esc(t.photo)}" alt="" loading="lazy" decoding="async" onerror="this.remove()"/>` : ''}</span>
         <span class="ttk-body">
           <b>${esc(t.name)}</b>
           <small>${[t.kind === 'dish' ? '' : 'Полуфабрикат', t.station ? stationById(t.station).short : '', t.yield || ''].filter(Boolean).map(esc).join(' · ')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
@@ -888,7 +891,7 @@
         const n = byStation.filter((t) => catOf(t) === c).length;
         const cover = all.find((t) => t.category === c && t.photo && t.id === 'ny05') || all.find((t) => t.category === c && t.photo);
         if (n && cover) return `<button class="card cat-tile cat-feature" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
-          <img src="${esc(cover.photo)}" alt="" loading="lazy" decoding="async"/>
+          <img src="${esc(cover.photo)}" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('no-photo'); this.remove()"/>
           <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>`;
         return n ? `<button class="card cat-tile" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
           <span class="ttk-st tone-${look(c)[1]}">${ic(look(c)[0], 24)}</span>
@@ -940,7 +943,7 @@
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
-        ${t.photo ? `<figure class="ttk-photo"><img src="${esc(t.photo)}" alt="${esc(t.name)}" decoding="async"/></figure>` : ''}
+        ${t.photo ? `<figure class="ttk-photo"><img src="${esc(t.photo)}" alt="${esc(t.name)}" decoding="async" onerror="this.parentNode.remove()"/></figure>` : ''}
         <div class="eyebrow">${esc([t.category, t.station ? stationById(t.station).short : 'Все станции']
           .filter((x, i, a) => x && a.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(' · '))}</div>
         <h2 class="dish">${esc(t.name)}</h2>
@@ -1053,6 +1056,52 @@
             </section>`;
           }).join('')}
         </div>
+      </main>${nav()}`;
+  }
+
+  /* ---------- Советы для профессиональной кухни ---------- */
+  // Совет дня: каждый день новый, одинаковый на всех устройствах
+  function tipOfDay() {
+    const flat = TIPS.flatMap((c) => c.tips.map((t) => ({ ...t, cat: c })));
+    const d = new Date(); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7;
+    return flat[n % flat.length];
+  }
+  const tipCard = (t, withCat) => `
+    <article class="card tip">
+      ${withCat ? `<div class="eyebrow">${esc(t.cat.title)}</div>` : ''}
+      <h3 class="tip-t">${esc(t.t)}</h3>
+      <p class="tip-d">${esc(t.d)}</p>
+      ${t.why ? `<p class="tip-why"><b>Почему:</b> ${esc(t.why)}</p>` : ''}
+    </article>`;
+
+  function viewTips() {
+    const day = tipOfDay();
+    return `${header('Советы')}
+      <main class="page">
+        <p class="lt-sub">Приёмы и цифры профессиональной кухни</p>
+        <section class="tip-day">
+          <div class="tip-day-h">${ic('star', 16)} Совет дня · ${esc(day.cat.title)}</div>
+          <h3 class="tip-t">${esc(day.t)}</h3>
+          <p class="tip-d">${esc(day.d)}</p>
+          ${day.why ? `<p class="tip-why"><b>Почему:</b> ${esc(day.why)}</p>` : ''}
+        </section>
+        <h2 class="section-title">Разделы</h2>
+        <div class="quick">
+          ${TIPS.map((c) => `<button class="card quick-card" data-go="tips-cat" data-id="${c.id}">
+            <span class="q-ic tone-${c.tone}">${ic(c.icon, 22)}</span>
+            <span class="q-t"><b>${esc(c.title)}</b><small>${esc(c.sub)}</small></span>
+            <span class="count-muted">${c.tips.length}</span>${ic('chevR', 18)}</button>`).join('')}
+        </div>
+      </main>${nav()}`;
+  }
+
+  function viewTipsCat() {
+    const c = TIPS.find((x) => x.id === state.params.id) || TIPS[0];
+    return `${header(c.title, 'tips')}
+      <main class="page">
+        <div class="tips-head"><span class="st-icon tone-${c.tone}">${ic(c.icon, 24)}</span>
+          <div><h2 class="dish">${esc(c.title)}</h2><p class="muted">${esc(c.sub)} · ${c.tips.length} ${plural(c.tips.length, ['совет', 'совета', 'советов'])}</p></div></div>
+        <div class="tips">${c.tips.map((t) => tipCard(t)).join('')}</div>
       </main>${nav()}`;
   }
 
@@ -1312,7 +1361,7 @@
   /* ---------------- Рендер ---------------- */
   const VIEWS = {
     home: viewHome, checklists: viewChecklists, ttk: viewTtk, 'ttk-view': viewTtkDetail,
-    'ttk-edit': viewTtkEdit, safety: viewSafety, team: viewTeam, member: viewMember, profile: viewProfile,
+    'ttk-edit': viewTtkEdit, safety: viewSafety, tips: viewTips, 'tips-cat': viewTipsCat, team: viewTeam, member: viewMember, profile: viewProfile,
     'shift-edit': viewShiftEdit, 'ttk-storage': viewTtkStorage,
   };
 
@@ -1359,7 +1408,7 @@
   }
 
   // «Экран» — это раздел (и карточка/сотрудник/смена для экранов-подробностей); фильтры и вкладки — тот же экран
-  const screenOf = (view, p = {}) => (['ttk-view', 'ttk-edit', 'member', 'shift-edit'].includes(view) ? view + ':' + (p.id || '')
+  const screenOf = (view, p = {}) => (['ttk-view', 'ttk-edit', 'member', 'shift-edit', 'tips-cat'].includes(view) ? view + ':' + (p.id || '')
     : view === 'ttk' && p.cat ? 'ttk:cat' : view); // плитки разделов ТТК и список раздела — разные экраны
 
   let lastScreen = null;

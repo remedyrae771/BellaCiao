@@ -699,7 +699,8 @@ body.title-in .is-root .brand-mini { opacity: 0; }
 .attend-row .btn.btn-sm:not(.btn-out) { background: var(--tint-soft); color: var(--tint); box-shadow: none; }
 
 /* ---------- Фото в ТТК ---------- */
-.ttk-thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: none; background: var(--fill); }
+.ttk-st.has-photo { position: relative; overflow: hidden; }
+.ttk-thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .ttk-photo { margin: 0 0 16px; border-radius: var(--r-lg); overflow: hidden; background: var(--fill); aspect-ratio: 4 / 3; box-shadow: var(--shadow-1); }
 .ttk-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cat-grid .cat-feature { grid-column: 1 / -1; position: relative; min-height: 150px; padding: 0; overflow: hidden; justify-content: flex-end; color: #fff; }
@@ -708,3 +709,25 @@ body.title-in .is-root .brand-mini { opacity: 0; }
 .cat-feature .cat-t { position: relative; z-index: 1; padding: 14px 16px; }
 .cat-feature .cat-t b { color: #fff; font-size: 20px; }
 .cat-feature .cat-t small { color: rgba(255,255,255,.85); }
+.cat-feature.no-photo { background: linear-gradient(135deg, #e2643b, #b8322a); }
+
+/* ---------- Советы ---------- */
+.tip-day { margin: 4px 0 8px; padding: 16px; border-radius: var(--r-lg); color: #fff;
+  background: linear-gradient(140deg, #1d4fb0, #13284a); box-shadow: var(--shadow-1); }
+.tip-day-h { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: rgba(255,255,255,.8); }
+.tip-day-h .ic { color: #ffd60a; fill: #ffd60a; }
+.tip-day .tip-t { color: #fff; }
+.tip-day .tip-d { color: rgba(255,255,255,.92); }
+.tip-day .tip-why { color: rgba(255,255,255,.78); border-color: rgba(255,255,255,.2); }
+.tip-day .tip-why b { color: #fff; }
+.tips { display: flex; flex-direction: column; gap: 12px; }
+.tip { padding: 16px; border-radius: var(--r); }
+.tip-t { font-family: var(--font); font-size: 19px; font-weight: 700; line-height: 1.25; letter-spacing: -.015em; margin: 6px 0 8px; text-transform: none; color: var(--label); }
+.tip-d { margin: 0; font-size: 17px; line-height: 1.45; }
+.tip-why { margin: 12px 0 0; padding-top: 10px; border-top: .5px solid var(--sep); font-size: 15px; line-height: 1.4; color: var(--label-2); }
+.tip-why b { color: var(--label); font-weight: 600; }
+.tips-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 16px; }
+.tips-head .dish { margin: 0; }
+.tips-head .muted { margin: 2px 0 0; }
+.count-muted { flex: none; color: var(--label-2); font-size: 17px; font-variant-numeric: tabular-nums; }
+.bottom-nav button > span:last-child { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
