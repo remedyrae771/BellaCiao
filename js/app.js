@@ -154,7 +154,7 @@
 
   // ТТК из учётной системы: добавляются на все устройства один раз.
   // Карты, которые шеф правил, сохраняются; заменяются только старые версии с фото.
-  const ttkNeedsUpdate = (list) => !list.some((t) => t.id === 'x001') || list.some((t) => TTK_REPLACED_IDS.includes(t.id));
+  const ttkNeedsUpdate = (list) => !list.some((t) => t.id === 'x001') || !list.some((t) => t.id === 'ny01') || list.some((t) => TTK_REPLACED_IDS.includes(t.id));
   const OLD_TTK_CATEGORIES = ['Мясо и птица', 'Начинки для равиоли', 'Закуски и намазки', 'Овощи и гарниры'];
   function mergeTtkDefaults(stored) {
     const have = new Set(stored.map((t) => t.id));
@@ -544,11 +544,13 @@
     firstaid: 'M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM8.5 7V4.5h7V7M12 10.5v6M9 13.5h6',
     fish: 'M3 12c2.4-3.6 5.8-5.5 9.5-5.5S19 8.4 21 12c-2 3.6-4.8 5.5-8.5 5.5S5.4 15.6 3 12zM3 12 1 9.5M3 12l-2 2.5M16.5 10.8h.01',
     leaf: 'M5 19c-.5-6.5 3.5-12.5 15-14-1 11.5-7.5 15.5-14 14.5zM5 19l7.5-7.5',
+    gift: 'M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 7.5h18V11H3zM12 7.5V21M12 7.5C10.5 4 7 3.6 7 5.6 7 7 9.5 7.5 12 7.5zM12 7.5c1.5-3.5 5-3.9 5-1.9 0 1.4-2.5 1.9-5 1.9z',
     cog: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1',
   };
   // Цвет плитки: у каждой станции и категории ТТК свой
   const STATION_TONE = { cold: 'sky', pasta: 'amber', grill: 'coral', pass: 'navy', pizza: 'rose', pastry: 'plum', chef: 'violet' };
   const CATEGORY_LOOK = {
+    'Новогодний спешл': ['gift', 'coral'],
     'Завтраки': ['coffee', 'amber'], 'Салаты': ['leaf', 'green'], 'Закуски и антипасти': ['bread', 'teal'],
     'Супы и бульоны': ['soup', 'sky'], 'Паста и равиоли': ['pasta', 'navy'], 'Пицца': ['pizza', 'rose'],
     'Горячие блюда': ['flame', 'coral'], 'Детское меню': ['sun', 'violet'], 'Десерты': ['cake', 'plum'],
@@ -556,7 +558,7 @@
     'Полуфабрикаты': ['clipboard', 'navy'],
   };
   // Разделы меню и разделы полуфабрикатов на экране ТТК
-  const MENU_CATEGORIES = ['Завтраки', 'Салаты', 'Закуски и антипасти', 'Супы и бульоны', 'Паста и равиоли', 'Пицца', 'Горячие блюда', 'Детское меню', 'Десерты'];
+  const MENU_CATEGORIES = ['Новогодний спешл', 'Завтраки', 'Салаты', 'Закуски и антипасти', 'Супы и бульоны', 'Паста и равиоли', 'Пицца', 'Горячие блюда', 'Детское меню', 'Десерты'];
   const plural = (n, [one, few, many]) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
   const tone = (stationId) => 'tone-' + (STATION_TONE[stationId] || 'navy');
   const ic = (name, size = 20) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] || ICONS.shield}"/></svg>`;
@@ -858,7 +860,7 @@
     const look = (c) => CATEGORY_LOOK[c] || ['book', 'navy'];
     const card = (t) => `
       <button class="card ttk-card" data-go="ttk-view" data-id="${t.id}">
-        <span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>
+        ${t.photo ? `<img class="ttk-thumb" src="${esc(t.photo)}" alt="" loading="lazy" decoding="async"/>` : `<span class="ttk-st tone-${look(t.category)[1]}">${ic(look(t.category)[0], 22)}</span>`}
         <span class="ttk-body">
           <b>${esc(t.name)}</b>
           <small>${[t.kind === 'dish' ? '' : 'Полуфабрикат', t.station ? stationById(t.station).short : '', t.yield || ''].filter(Boolean).map(esc).join(' · ')}${t.note ? ' · <span class="warn-t">сверить</span>' : ''}</small>
@@ -884,6 +886,10 @@
       // Главный экран ТТК — плитки разделов
       const tile = (c) => {
         const n = byStation.filter((t) => catOf(t) === c).length;
+        const cover = all.find((t) => t.category === c && t.photo && t.id === 'ny05') || all.find((t) => t.category === c && t.photo);
+        if (n && cover) return `<button class="card cat-tile cat-feature" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
+          <img src="${esc(cover.photo)}" alt="" loading="lazy" decoding="async"/>
+          <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>`;
         return n ? `<button class="card cat-tile" data-go="ttk" data-cat="${esc(c)}" data-station="${st}">
           <span class="ttk-st tone-${look(c)[1]}">${ic(look(c)[0], 24)}</span>
           <span class="cat-t"><b>${esc(c)}</b><small>${n} ${plural(n, ['карта', 'карты', 'карт'])}</small></span></button>` : '';
@@ -938,6 +944,7 @@
 
     return `${header('ТТК', 'ttk')}
       <main class="page ttk-detail">
+        ${t.photo ? `<figure class="ttk-photo"><img src="${esc(t.photo)}" alt="${esc(t.name)}" decoding="async"/></figure>` : ''}
         <div class="eyebrow">${esc([t.category, t.station ? stationById(t.station).short : 'Все станции']
           .filter((x, i, a) => x && a.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(' · '))}</div>
         <h2 class="dish">${esc(t.name)}</h2>
@@ -963,7 +970,7 @@
         <table class="ing">
           <thead><tr><th>Продукт</th><th>Кол-во</th><th>Ед.</th></tr></thead>
           <tbody>${t.ingredients.map((i) => {
-            const [qv, qu] = showQty(i[1] * k, ingUnit(i));
+            const [qv, qu] = Number(i[1]) ? showQty(i[1] * k, ingUnit(i)) : ['—', 'уточнить'];
             const pf = /^пф/i.test(String(i[0])) ? pfIndex.get(ttkKey(i[0])) : null;
             const name = pf && pf !== t.id
               ? `<button class="ing-link" data-go="ttk-view" data-id="${pf}">${esc(i[0])}${ic('chevR', 14)}</button>` : esc(i[0]);
