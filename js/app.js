@@ -253,18 +253,51 @@
   /* ---------------- Сессия и авто-выход ---------------- */
   const IDLE_MS = 10 * 60 * 1000;
   let idleTimer;
+  let sessionTouched = 0;
   function resetIdle() {
     if (!state.user) return;
+    if (Date.now() - sessionTouched > 30000) {
+      sessionTouched = Date.now();
+      save(KEY.session, { id: state.user.id, at: Date.now(), view: state.view, params: state.params });
+    }
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => { logout(); toast('Автоматический выход: нет активности 10 минут'); }, IDLE_MS);
   }
   ['pointerdown', 'keydown'].forEach((e) => document.addEventListener(e, resetIdle, { passive: true }));
 
+  // Телефон мог выгрузить приложение из памяти (переключились на другое и вернулись).
+  // Возвращаем на тот же экран и восстанавливаем путь «Назад»: главная → раздел → экран.
+  const RESTORABLE = ['home', 'checklists', 'ttk', 'ttk-view', 'ttk-storage', 'tips', 'tips-cat', 'safety', 'team', 'profile'];
   function restoreSession() {
     const s = load(KEY.session);
     if (!s || Date.now() - s.at > IDLE_MS) return;
     const u = load(KEY.staff, []).find((x) => x.id === s.id);
-    if (u) { state.user = u; resetIdle(); }
+    if (!u) return;
+    state.user = u; resetIdle();
+    if (!RESTORABLE.includes(s.view)) return;
+    if (s.view === 'ttk-view' && !load(KEY.ttk, []).some((t) => t.id === (s.params || {}).id)) return;
+    state.view = s.view; state.params = s.params || {};
+    try {
+      const chain = [];
+      for (let v = { view: state.view, params: state.params }; v && v.view !== 'home'; v = parentOf(v.view, v.params)) chain.unshift(v);
+      history.replaceState({ bc: true, view: 'home', params: {}, depth: 0 }, '');
+      navDepth = 0;
+      for (const v of chain) history.pushState({ bc: true, view: v.view, params: v.params, depth: ++navDepth }, '');
+    } catch { /* история недоступна */ }
+  }
+  // Логический «родитель» экрана — куда ведёт «Назад», если истории нет
+  function parentOf(view, p = {}) {
+    if (view === 'ttk-view') {
+      if (p.q) return { view: 'ttk', params: { q: p.q } };
+      const t = load(KEY.ttk, []).find((x) => x.id === p.id);
+      return { view: 'ttk', params: t ? { cat: t.category } : {} };
+    }
+    if (view === 'ttk-edit') return p.id ? { view: 'ttk-view', params: { id: p.id } } : { view: 'ttk', params: {} };
+    if (view === 'ttk-storage') return { view: 'ttk', params: {} };
+    if (view === 'tips-cat') return { view: 'tips', params: {} };
+    if (view === 'member' || view === 'shift-edit') return { view: 'team', params: { tab: view === 'member' ? 'staff' : 'hours' } };
+    if (view === 'ttk' && (p.cat || p.q)) return { view: 'ttk', params: {} };
+    return view === 'home' ? null : { view: 'home', params: {} };
   }
 
   function logout() {
@@ -374,7 +407,7 @@
     // Направление перехода: назад — слева, вкладка — мягкая смена, остальное — справа
     state.navDir = opts.fromHistory ? 'back' : TABS.includes(view) && (TABS.includes(state.view) || opts.tab) ? 'tab' : 'forward';
     state.view = view; state.params = params; pendingRender = false;
-    if (state.user) save(KEY.session, { id: state.user.id, at: Date.now() });
+    if (state.user) save(KEY.session, { id: state.user.id, at: Date.now(), view, params });
     if (!opts.fromHistory) {
       try {
         // Фильтры и вкладки внутри экрана не копятся в истории «Назад»
@@ -397,7 +430,22 @@
       try { history.go(-(view === 'home' ? navDepth : navDepth - 1)); return; } catch { pendingTab = null; }
     }
     if (view === 'home') { go('home', params, { tab: true }); return; }
-    go(view, params, { tab: true, replace: navDepth === 1 });
+    showTab(view, params);
+  }
+  // Открыть вкладку на уровне 1 истории; если она открывается сразу внутри раздела
+  // (ТТК помнит последний раздел), под ним в истории лежит начало вкладки
+  function showTab(view, params) {
+    const par = parentOf(view, params);
+    if (par && par.view !== 'home') {
+      try {
+        if (navDepth >= 1) history.replaceState({ bc: true, view: par.view, params: par.params, depth: 1 }, '');
+        else history.pushState({ bc: true, view: par.view, params: par.params, depth: 1 }, '');
+        navDepth = 1;
+      } catch { /* нет истории */ }
+      go(view, params, { tab: true });
+      return;
+    }
+    go(view, params, { tab: true, replace: navDepth >= 1 });
   }
 
   window.addEventListener('popstate', (e) => {
@@ -408,7 +456,7 @@
     if (pendingTab) {
       const t = pendingTab; pendingTab = null;
       if (t.view === 'home') go('home', t.params, { tab: true, replace: true });
-      else go(t.view, t.params, { tab: true, replace: navDepth >= 1 });
+      else showTab(t.view, t.params);
       return;
     }
     go(st.view, st.params || {}, { fromHistory: true });
@@ -463,7 +511,9 @@
 
   // Кнопка «‹» в шапке: назад по истории, если есть куда, иначе на указанный экран
   function goBack(fallback) {
-    if (navDepth > 0) history.back(); else go(fallback);
+    if (navDepth > 0) { history.back(); return; }
+    const par = parentOf(state.view, state.params);
+    if (par) go(par.view, par.params, { replace: true }); else go(fallback);
   }
 
   /* ---------------- Чек-листы: данные ---------------- */
@@ -1616,6 +1666,9 @@
       const p = {};
       for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit', 'from', 'to', 'cat']) if (d[k] !== undefined) p[k] = d[k];
       if (d.go === 'ttk-view' && !p.id) p.id = state.params.id;
+      // карта, открытая из поиска, помнит запрос — «Назад» вернёт к результатам
+      if (d.go === 'ttk-view' && state.view === 'ttk' && state.params.q) p.q = state.params.q;
+      if (d.go === 'ttk-view' && state.view === 'ttk-view' && state.params.q) p.q = state.params.q;
       if (d.go === 'checklists') {
         // С другого экрана — открываем ту станцию и тот чек-лист, что были открыты в последний раз (в течение 3 часов)
         const last = state.lastCl && Date.now() - state.lastCl.at < 3 * 3600e3 ? state.lastCl : null;
@@ -1647,6 +1700,9 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'ttk-search') {
       state.params.q = e.target.value;
+      // запоминаем запрос в истории: «Назад» из карты вернёт к результатам поиска
+      try { history.replaceState({ bc: true, view: state.view, params: { ...state.params }, depth: navDepth }, ''); } catch { /* нет истории */ }
+      if (state.user) save(KEY.session, { id: state.user.id, at: Date.now(), view: state.view, params: { ...state.params } });
       render();
     }
   });
