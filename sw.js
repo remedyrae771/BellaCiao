@@ -5,7 +5,7 @@
    применяется при следующем открытии.
    Запросы к самой базе (firestore/googleapis) не перехватываются: у Firebase
    свой офлайн-режим, а кэширование его потоковых ответов ломало бы обновления. */
-const CACHE = 'bellaciao-v29';
+const CACHE = 'bellaciao-v31';
 const ASSETS = [
   './', './index.html', './css/styles.css', './js/data.js', './js/ttk-data.js', './js/tips-data.js',
   './js/firebase-config.js', './js/firebase-db.js', './js/sync.js', './js/app.js',

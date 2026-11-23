@@ -175,7 +175,7 @@
       const u = load(KEY.staff, []).find((x) => x.id === state.user.id);
       if (!u || u.disabled) { logout(); return; }
       state.user = u;
-    } else if (!state.restored && Sync.status === 'online') {
+    } else if (!state.restored && Sync.ready) {
       state.restored = true; restoreSession();
     }
     const a = document.activeElement;
@@ -670,7 +670,7 @@
 
   function viewLogin() {
     if (state.group) return viewPickName();
-    const locked = Date.now() < state.lockedUntil || Sync.status === 'loading' || Sync.status === 'offline';
+    const locked = Date.now() < state.lockedUntil || ((Sync.status === 'loading' || Sync.status === 'offline') && !Sync.ready);
     const dots = [0, 1, 2, 3].map((i) => `<i class="${i < state.pin.length ? 'on' : ''}"></i>`).join('');
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
     return `
@@ -684,10 +684,10 @@
             <div class="logo-tag">Кухня · Алматы</div>
           </div>
           <h1 class="login-title">Вход на кухню</h1>
-          <p class="login-hint ${state.loginError || Sync.status === 'offline' || Date.now() < state.lockedUntil ? 'is-warn' : ''}" role="status">${Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.'
+          <p class="login-hint ${state.loginError || (Sync.status === 'offline' && !Sync.ready) || Date.now() < state.lockedUntil ? 'is-warn' : ''}" role="status">${Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.'
             : state.loginError ? state.loginError
-            : Sync.status === 'loading' ? 'Подключаемся к базе…'
-            : Sync.status === 'offline' ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
+            : Sync.status === 'loading' && !Sync.ready ? 'Подключаемся к базе…'
+            : Sync.status === 'offline' && !Sync.ready ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
             : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код руководителя'}</p>
           <div class="pin-dots" aria-label="Введено цифр: ${state.pin.length} из 4">${dots}</div>
           <div class="keypad">
@@ -1773,6 +1773,8 @@
 
   /* ---------------- Старт ---------------- */
   if ((typeof FIREBASE_CONFIG !== 'undefined' && FIREBASE_CONFIG) || window.claude?.use) Sync.connecting();
+  // Есть копия базы на устройстве — сразу возвращаем в приложение, не дожидаясь сети
+  if (Sync.ready) { state.restored = true; restoreSession(); }
   render();
   init().then(() => { if (Sync.status === 'local') restoreSession(); render(); });
 
