@@ -175,7 +175,7 @@
       const u = load(KEY.staff, []).find((x) => x.id === state.user.id);
       if (!u || u.disabled) { logout(); return; }
       state.user = u;
-    } else if (!state.restored && Sync.status === 'online') {
+    } else if (!state.restored && Sync.ready) {
       state.restored = true; restoreSession();
     }
     const a = document.activeElement;
@@ -253,18 +253,51 @@
   /* ---------------- Сессия и авто-выход ---------------- */
   const IDLE_MS = 10 * 60 * 1000;
   let idleTimer;
+  let sessionTouched = 0;
   function resetIdle() {
     if (!state.user) return;
+    if (Date.now() - sessionTouched > 30000) {
+      sessionTouched = Date.now();
+      save(KEY.session, { id: state.user.id, at: Date.now(), view: state.view, params: state.params });
+    }
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => { logout(); toast('Автоматический выход: нет активности 10 минут'); }, IDLE_MS);
   }
   ['pointerdown', 'keydown'].forEach((e) => document.addEventListener(e, resetIdle, { passive: true }));
 
+  // Телефон мог выгрузить приложение из памяти (переключились на другое и вернулись).
+  // Возвращаем на тот же экран и восстанавливаем путь «Назад»: главная → раздел → экран.
+  const RESTORABLE = ['home', 'checklists', 'ttk', 'ttk-view', 'ttk-storage', 'tips', 'tips-cat', 'safety', 'team', 'profile'];
   function restoreSession() {
     const s = load(KEY.session);
     if (!s || Date.now() - s.at > IDLE_MS) return;
     const u = load(KEY.staff, []).find((x) => x.id === s.id);
-    if (u) { state.user = u; resetIdle(); }
+    if (!u) return;
+    state.user = u; resetIdle();
+    if (!RESTORABLE.includes(s.view)) return;
+    if (s.view === 'ttk-view' && !load(KEY.ttk, []).some((t) => t.id === (s.params || {}).id)) return;
+    state.view = s.view; state.params = s.params || {};
+    try {
+      const chain = [];
+      for (let v = { view: state.view, params: state.params }; v && v.view !== 'home'; v = parentOf(v.view, v.params)) chain.unshift(v);
+      history.replaceState({ bc: true, view: 'home', params: {}, depth: 0 }, '');
+      navDepth = 0;
+      for (const v of chain) history.pushState({ bc: true, view: v.view, params: v.params, depth: ++navDepth }, '');
+    } catch { /* история недоступна */ }
+  }
+  // Логический «родитель» экрана — куда ведёт «Назад», если истории нет
+  function parentOf(view, p = {}) {
+    if (view === 'ttk-view') {
+      if (p.q) return { view: 'ttk', params: { q: p.q } };
+      const t = load(KEY.ttk, []).find((x) => x.id === p.id);
+      return { view: 'ttk', params: t ? { cat: t.category } : {} };
+    }
+    if (view === 'ttk-edit') return p.id ? { view: 'ttk-view', params: { id: p.id } } : { view: 'ttk', params: {} };
+    if (view === 'ttk-storage') return { view: 'ttk', params: {} };
+    if (view === 'tips-cat') return { view: 'tips', params: {} };
+    if (view === 'member' || view === 'shift-edit') return { view: 'team', params: { tab: view === 'member' ? 'staff' : 'hours' } };
+    if (view === 'ttk' && (p.cat || p.q)) return { view: 'ttk', params: {} };
+    return view === 'home' ? null : { view: 'home', params: {} };
   }
 
   function logout() {
@@ -374,7 +407,7 @@
     // Направление перехода: назад — слева, вкладка — мягкая смена, остальное — справа
     state.navDir = opts.fromHistory ? 'back' : TABS.includes(view) && (TABS.includes(state.view) || opts.tab) ? 'tab' : 'forward';
     state.view = view; state.params = params; pendingRender = false;
-    if (state.user) save(KEY.session, { id: state.user.id, at: Date.now() });
+    if (state.user) save(KEY.session, { id: state.user.id, at: Date.now(), view, params });
     if (!opts.fromHistory) {
       try {
         // Фильтры и вкладки внутри экрана не копятся в истории «Назад»
@@ -397,7 +430,22 @@
       try { history.go(-(view === 'home' ? navDepth : navDepth - 1)); return; } catch { pendingTab = null; }
     }
     if (view === 'home') { go('home', params, { tab: true }); return; }
-    go(view, params, { tab: true, replace: navDepth === 1 });
+    showTab(view, params);
+  }
+  // Открыть вкладку на уровне 1 истории; если она открывается сразу внутри раздела
+  // (ТТК помнит последний раздел), под ним в истории лежит начало вкладки
+  function showTab(view, params) {
+    const par = parentOf(view, params);
+    if (par && par.view !== 'home') {
+      try {
+        if (navDepth >= 1) history.replaceState({ bc: true, view: par.view, params: par.params, depth: 1 }, '');
+        else history.pushState({ bc: true, view: par.view, params: par.params, depth: 1 }, '');
+        navDepth = 1;
+      } catch { /* нет истории */ }
+      go(view, params, { tab: true });
+      return;
+    }
+    go(view, params, { tab: true, replace: navDepth >= 1 });
   }
 
   window.addEventListener('popstate', (e) => {
@@ -408,7 +456,7 @@
     if (pendingTab) {
       const t = pendingTab; pendingTab = null;
       if (t.view === 'home') go('home', t.params, { tab: true, replace: true });
-      else go(t.view, t.params, { tab: true, replace: navDepth >= 1 });
+      else showTab(t.view, t.params);
       return;
     }
     go(st.view, st.params || {}, { fromHistory: true });
@@ -463,7 +511,9 @@
 
   // Кнопка «‹» в шапке: назад по истории, если есть куда, иначе на указанный экран
   function goBack(fallback) {
-    if (navDepth > 0) history.back(); else go(fallback);
+    if (navDepth > 0) { history.back(); return; }
+    const par = parentOf(state.view, state.params);
+    if (par) go(par.view, par.params, { replace: true }); else go(fallback);
   }
 
   /* ---------------- Чек-листы: данные ---------------- */
@@ -670,7 +720,7 @@
 
   function viewLogin() {
     if (state.group) return viewPickName();
-    const locked = Date.now() < state.lockedUntil || Sync.status === 'loading' || Sync.status === 'offline';
+    const locked = Date.now() < state.lockedUntil || ((Sync.status === 'loading' || Sync.status === 'offline') && !Sync.ready);
     const dots = [0, 1, 2, 3].map((i) => `<i class="${i < state.pin.length ? 'on' : ''}"></i>`).join('');
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
     return `
@@ -684,10 +734,10 @@
             <div class="logo-tag">Кухня · Алматы</div>
           </div>
           <h1 class="login-title">Вход на кухню</h1>
-          <p class="login-hint ${state.loginError || Sync.status === 'offline' || Date.now() < state.lockedUntil ? 'is-warn' : ''}" role="status">${Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.'
+          <p class="login-hint ${state.loginError || (Sync.status === 'offline' && !Sync.ready) || Date.now() < state.lockedUntil ? 'is-warn' : ''}" role="status">${Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.'
             : state.loginError ? state.loginError
-            : Sync.status === 'loading' ? 'Подключаемся к базе…'
-            : Sync.status === 'offline' ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
+            : Sync.status === 'loading' && !Sync.ready ? 'Подключаемся к базе…'
+            : Sync.status === 'offline' && !Sync.ready ? 'Нет связи с базой. Проверьте интернет — приложение подключится само.'
             : Date.now() < state.lockedUntil ? 'Слишком много попыток. Подождите 30 секунд.' : 'Введите код руководителя'}</p>
           <div class="pin-dots" aria-label="Введено цифр: ${state.pin.length} из 4">${dots}</div>
           <div class="keypad">
@@ -1060,12 +1110,31 @@
   }
 
   /* ---------- Советы для профессиональной кухни ---------- */
-  // Совет дня: каждый день новый, одинаковый на всех устройствах
-  function tipOfDay() {
-    const flat = TIPS.flatMap((c) => c.tips.map((t) => ({ ...t, cat: c })));
-    const d = new Date(); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7;
-    return flat[n % flat.length];
+  // Порядок разделов: от продукта и техники к организации кухни
+  const TIP_ORDER = ['meat', 'fish', 'heat', 'pasta', 'pizza', 'sauce', 'stock', 'cold', 'veg', 'pastry', 'taste', 'prep', 'safety', 'lead', 'cost'];
+  const tipSections = () => [...TIPS].sort((a, b) => (TIP_ORDER.indexOf(a.id) + 99) % 99 - (TIP_ORDER.indexOf(b.id) + 99) % 99);
+  // Совет меняется каждые 2 часа (12 в сутки), одинаково на всех устройствах.
+  // Разделы чередуются по кругу, чтобы два совета подряд не были про одно и то же.
+  const TIP_EVERY_H = 2;
+  let tipFlat = null;
+  function tipQueue() {
+    if (tipFlat) return tipFlat;
+    const secs = tipSections(); tipFlat = [];
+    for (let i = 0; secs.some((c) => c.tips[i]); i++) for (const c of secs) if (c.tips[i]) tipFlat.push({ ...c.tips[i], cat: c });
+    return tipFlat;
   }
+  function tipSlot(now = Date.now()) {
+    const localH = Math.floor((now - new Date(now).getTimezoneOffset() * 60000) / 3600000);
+    return Math.floor(localH / TIP_EVERY_H);
+  }
+  function currentTip() {
+    const q = tipQueue(), slot = tipSlot();
+    if (state.tipSlot !== slot) { state.tipSlot = slot; state.tipExtra = 0; }
+    return q[(slot + (state.tipExtra || 0)) % q.length];
+  }
+  // Если вкладка «Советы» открыта, когда наступает новое двухчасовое окно, совет меняется сам
+  setInterval(() => { if (state.user && state.view === 'tips' && tipSlot() !== state.tipSlot && document.visibilityState === 'visible') render(); }, 30000);
+  const nextTipAt = () => { const d = new Date(); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + TIP_EVERY_H - (d.getHours() % TIP_EVERY_H)); return d; };
   const tipCard = (t, withCat) => `
     <article class="card tip">
       ${withCat ? `<div class="eyebrow">${esc(t.cat.title)}</div>` : ''}
@@ -1075,19 +1144,23 @@
     </article>`;
 
   function viewTips() {
-    const day = tipOfDay();
+    const day = currentTip();
     return `${header('Советы')}
       <main class="page">
-        <p class="lt-sub">Приёмы и цифры профессиональной кухни</p>
+        <p class="lt-sub">${tipQueue().length} ${plural(tipQueue().length, ['приём', 'приёма', 'приёмов'])} профессиональной кухни</p>
         <section class="tip-day">
-          <div class="tip-day-h">${ic('star', 16)} Совет дня · ${esc(day.cat.title)}</div>
+          <div class="tip-day-h">${ic('star', 16)} ${state.tipExtra ? 'Ещё совет' : 'Совет сейчас'} · ${esc(day.cat.title)}</div>
           <h3 class="tip-t">${esc(day.t)}</h3>
           <p class="tip-d">${esc(day.d)}</p>
           ${day.why ? `<p class="tip-why"><b>Почему:</b> ${esc(day.why)}</p>` : ''}
+          <div class="tip-day-f">
+            <span>Новый совет в ${fmtTime(nextTipAt())}</span>
+            <button class="tip-next" data-tip-next>Ещё совет ${ic('chevR', 16)}</button>
+          </div>
         </section>
         <h2 class="section-title">Разделы</h2>
         <div class="quick">
-          ${TIPS.map((c) => `<button class="card quick-card" data-go="tips-cat" data-id="${c.id}">
+          ${tipSections().map((c) => `<button class="card quick-card" data-go="tips-cat" data-id="${c.id}">
             <span class="q-ic tone-${c.tone}">${ic(c.icon, 22)}</span>
             <span class="q-t"><b>${esc(c.title)}</b><small>${esc(c.sub)}</small></span>
             <span class="count-muted">${c.tips.length}</span>${ic('chevR', 18)}</button>`).join('')}
@@ -1513,6 +1586,14 @@
       if (state.pin.length === 4) setTimeout(tryLogin, 120);
       return;
     }
+    if (el.hasAttribute('data-tip-next')) {
+      state.tipExtra = (state.tipExtra || 0) + 1;
+      if (navigator.vibrate) navigator.vibrate(8);
+      render();
+      const card = document.querySelector('.tip-day');
+      if (card?.animate && !reduceMotion.matches) card.animate([{ opacity: 0.4, transform: 'translateX(14px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.22,1,.36,1)' });
+      return;
+    }
     if (d.pick) { pickUser(d.pick); return; }
     if (el.hasAttribute('data-cancel-pick')) { state.group = null; render(); return; }
     if (d.clock) {
@@ -1585,6 +1666,9 @@
       const p = {};
       for (const k of ['station', 'type', 'id', 'tab', 'open', 'edit', 'from', 'to', 'cat']) if (d[k] !== undefined) p[k] = d[k];
       if (d.go === 'ttk-view' && !p.id) p.id = state.params.id;
+      // карта, открытая из поиска, помнит запрос — «Назад» вернёт к результатам
+      if (d.go === 'ttk-view' && state.view === 'ttk' && state.params.q) p.q = state.params.q;
+      if (d.go === 'ttk-view' && state.view === 'ttk-view' && state.params.q) p.q = state.params.q;
       if (d.go === 'checklists') {
         // С другого экрана — открываем ту станцию и тот чек-лист, что были открыты в последний раз (в течение 3 часов)
         const last = state.lastCl && Date.now() - state.lastCl.at < 3 * 3600e3 ? state.lastCl : null;
@@ -1616,6 +1700,9 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'ttk-search') {
       state.params.q = e.target.value;
+      // запоминаем запрос в истории: «Назад» из карты вернёт к результатам поиска
+      try { history.replaceState({ bc: true, view: state.view, params: { ...state.params }, depth: navDepth }, ''); } catch { /* нет истории */ }
+      if (state.user) save(KEY.session, { id: state.user.id, at: Date.now(), view: state.view, params: { ...state.params } });
       render();
     }
   });
@@ -1742,6 +1829,8 @@
 
   /* ---------------- Старт ---------------- */
   if ((typeof FIREBASE_CONFIG !== 'undefined' && FIREBASE_CONFIG) || window.claude?.use) Sync.connecting();
+  // Есть копия базы на устройстве — сразу возвращаем в приложение, не дожидаясь сети
+  if (Sync.ready) { state.restored = true; restoreSession(); }
   render();
   init().then(() => { if (Sync.status === 'local') restoreSession(); render(); });
 

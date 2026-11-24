@@ -39,7 +39,33 @@ const Sync = (() => {
 
   const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const handles = (k) => !!db && k in SHARED;
+
+  /* ---------- копия базы на устройстве: мгновенный старт ----------
+     Последнее состояние общей базы хранится на телефоне. При запуске приложение
+     сразу работает по этой копии (вход, экраны), а база подключается в фоне
+     и присылает свежие данные. Без копии (самый первый запуск) вход ждёт базу. */
+  const SNAP_KEY = 'bc_sync_snap_v1';
+  let primed = false;
+  let pending = []; // изменения, сделанные до подключения базы
+  let snapTimer = null;
+  function saveSnap() {
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      if (!Object.keys(CONFIG).every((k) => cache[k] !== undefined)) return;
+      try { localStorage.setItem(SNAP_KEY, JSON.stringify({ at: Date.now(), data: cache })); } catch { /* мало места */ }
+    }, 400);
+  }
+  function prime() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null');
+      if (!s || !s.data || !Object.keys(CONFIG).every((k) => s.data[k] !== undefined)) return false;
+      Object.assign(cache, s.data);
+      cache.shifts = cache.shifts || []; cache.checks = cache.checks || {}; cache.acks = cache.acks || {};
+      primed = true;
+      return true;
+    } catch { return false; }
+  }
+  const handles = (k) => (!!db || primed) && k in SHARED;
 
   /* ---------- запись: по одной операции на документ ---------- */
   function enqueue(path, fn) {
@@ -123,12 +149,14 @@ const Sync = (() => {
         else if (snap.metadata.fromCache) return;
         loaded[name] = true;
         if (Object.keys(CONFIG).every((k) => loaded[k])) status = 'online';
+        saveSnap();
         onChange(name);
       }, fail);
     }
 
     db.collection('shifts').onSnapshot((qs) => {
       cache.shifts = qs.docs.flatMap((d) => Object.values(live(d.data().items)));
+      saveSnap();
       onChange('shifts');
     }, fail);
 
@@ -140,11 +168,13 @@ const Sync = (() => {
         out[`${b.date}|${b.station}|${b.type}`] = live(b.items);
       }
       cache.checks = out;
+      saveSnap();
       onChange('checks');
     }, fail);
 
     db.collection('acks').onSnapshot((qs) => {
       cache.acks = Object.fromEntries(qs.docs.map((d) => [d.id, live(d.data().items)]));
+      saveSnap();
       onChange('acks');
     }, fail);
 
@@ -154,23 +184,29 @@ const Sync = (() => {
   return {
     handles,
     get status() { return status; },
+    // Можно работать: база подключена или есть её свежая копия на устройстве
+    get ready() { return status === 'online' || (primed && status !== 'local'); },
     get(k) { return clone(cache[SHARED[k]]); },
     set(k, v) {
       const name = SHARED[k];
       const old = cache[name];
       cache[name] = clone(v);
-      write(name, old, cache[name]);
+      saveSnap();
+      if (db) write(name, old, cache[name]);
+      else pending.push([name, old, clone(v)]); // уйдёт в базу, как только она подключится
     },
-    // Пока страница выясняет, есть ли общая база, вход ждёт
-    connecting() { if (status === 'local') status = 'loading'; },
-    noDatabase() { if (!db) status = 'local'; },
+    // Пока страница выясняет, есть ли общая база, вход ждёт (если нет копии на устройстве)
+    connecting() { if (status === 'local') { status = 'loading'; prime(); } },
+    noDatabase() { if (!db) { status = 'local'; primed = false; } },
     start(database, opts) {
       db = database;
       defaults = opts.defaults || {};
       onChange = opts.onChange || onChange;
       onError = opts.onError || onError;
-      cache.shifts = []; cache.checks = {}; cache.acks = {};
+      if (!primed) { cache.shifts = []; cache.checks = {}; cache.acks = {}; }
       status = 'loading';
+      for (const [name, old, v] of pending) write(name, old, v);
+      pending = [];
       subscribe();
     },
   };
